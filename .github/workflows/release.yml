@@ -1,6 +1,9 @@
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-proton-ge:
     runs-on: ubuntu-latest
@@ -61,10 +64,18 @@ jobs:
         working-directory: ./build/
         run: tar -czvf ${{ env.RELEASE_VERSION }}.tar.gz ${{ env.RELEASE_VERSION }}
 
+      # 1. Save artifact BEFORE uploading in case the upload step fails
+      - name: Upload build artifact (Backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: proton-ge-${{ env.RELEASE_VERSION }}
+          path: build/${{ env.RELEASE_VERSION }}.tar.gz
+
+      # 2. Upload binaries to release using the automatic token via standard GitHub token permissions
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
-          repo_token: ${{ secrets.PROTON_GE_GITHUB_ACTIONS_BUILD }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: build/${{ env.RELEASE_VERSION }}.tar.gz
           file_glob: true
           tag: "${{ env.RELEASE_VERSION }}-build-${{ github.run_number }}"
