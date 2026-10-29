@@ -14,3 +14,4 @@ Patched with the latest version of DXVK and vkd3d for Persona 5 Royal, [upscaler
 [Reloaded-II Proton-GE](https://github.com/GloriousEggroll/proton-ge-custom/issues/873) patch is also applied.
 
 
+The goal is to work with Unhooked-II, and [P5R Enhanced](https://www.patreon.com/huutaiii/posts/p5r-enhanced-fsr-157194073). [Reloaded-II](https://www.protondb.com/app/1687950#95pafhwDMf) and Luma-Framework may work.
