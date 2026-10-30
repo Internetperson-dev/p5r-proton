@@ -46,14 +46,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-proton-${{ github.run_id }}
+          key: ccache-proton-${{ github.run_id }}  
           restore-keys: |
             ccache-proton
 
-      # Added --no-proton-sdk to use host tools/upgraded meson instead of the old container SDK
+      # Use make configure and clear out the protonsdk_version so it doesn't force the container SDK mismatch
       - name: Configure build proton
-        working-directory: ./build/
-        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --no-proton-sdk
+        run: |
+          cd build
+          ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
+        env:
+          protonsdk_version: ""
 
       # Build name following convention: Proton-<tag>
       - name: Build proton
