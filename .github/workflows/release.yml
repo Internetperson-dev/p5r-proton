@@ -57,6 +57,14 @@ jobs:
           mv libmspack.so.0.1.0 ../files/lib64/ && \
           rm cabextract_1.9-1.debian.tar.xz libmspack_0.10.1-1.debian.tar.xz
 
+      - name: Patch vkd3d-proton DLLs (latest version) before archive
+        working-directory: ./build/${{ env.RELEASE_VERSION }}/files/
+        run: |
+          # Replace vkd3d-proton DLLs with latest version before compression/upload
+          cp -f ../../../vkd3d-proton/*.dll lib64/wine/vkd3d-proton/ 2>/dev/null || true
+          cp -f ../../../vkd3d-proton/*.dll lib/wine/vkd3d-proton/ 2>/dev/null || true
+          echo "vkd3d DLL files patched with latest version"
+
       - name: Archive build
         working-directory: ./build/
         run: tar -czvf ${{ env.RELEASE_VERSION }}.tar.gz ${{ env.RELEASE_VERSION }}
