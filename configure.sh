@@ -118,12 +118,6 @@ function configure() {
   dependency_command git
   dependency_command python3
 
-  # Initialize/update submodules to latest upstream versions
-  stat "Ensuring submodules are initialized and up to date..."
-  if [ -f .gitmodules ]; then
-    cmd git submodule update --init --recursive --jobs 20 || cmd git submodule update --init --recursive
-  fi
-
   if [ "$MISSING_DEPENDENCIES" -ne 0 ]; then
       die "Missing dependencies, cannot continue."
   fi
