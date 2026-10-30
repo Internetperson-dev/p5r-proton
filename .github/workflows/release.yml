@@ -1,35 +1,40 @@
+name: Build Proton-GE
+
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-proton-ge:
     runs-on: ubuntu-latest
-    steps:
     
+    steps:
       - name: Get branch names
         id: branch-name
         uses: tj-actions/branch-names@v5.1
-    
+
       - name: Clone repo
         run: git clone -b ${{ steps.branch-name.outputs.current_branch }} --jobs 20 --recurse-submodules ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} .
 
       - name: Get Proton Versions
         run: echo "RELEASE_VERSION=$(cat VERSION)" >> $GITHUB_ENV
-        
+
       - name: Display version
         run: echo ${{ env.RELEASE_VERSION }}
 
       - name: Install dependencies apt
-        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox
+        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm
 
       - name: apply patches
-        run: ./patches/protonprep-valve-staging.sh  || true
+        run: ./patches/protonprep-valve-staging.sh || true
 
       - name: Create dir structure
         run: mkdir build
 
       - name: Create/Download ccache
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: ~/.ccache
           key: ccache-proton-${{ github.run_id }}
@@ -68,6 +73,13 @@ jobs:
       - name: Archive build
         working-directory: ./build/
         run: tar -czvf ${{ env.RELEASE_VERSION }}.tar.gz ${{ env.RELEASE_VERSION }}
+
+      # Save artifact BEFORE uploading in case the release upload step fails
+      - name: Upload build artifact (Backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: proton-ge-${{ env.RELEASE_VERSION }}
+          path: build/${{ env.RELEASE_VERSION }}.tar.gz
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
