@@ -78,6 +78,13 @@ jobs:
           mv libmspack.so.0.1.0 ../files/lib64/ && \
           rm cabextract_1.9-1.debian.tar.xz libmspack_0.10.1-1.debian.tar.xz
 
+      - name: Fix DLL permissions to match installed GE-Proton
+        working-directory: ./build/${{ env.RELEASE_VERSION }}/files/
+        run: |
+          # Ensure DLL permissions match installed GE-Proton11-7 reference
+          chmod 755 lib64/wine/dxvk/*.dll lib/wine/dxvk/*.dll lib64/wine/vkd3d-proton/*.dll lib/wine/vkd3d-proton/*.dll 2>/dev/null || true
+          chmod 444 lib64/wine/dxvk/version lib/wine/dxvk/version lib64/wine/vkd3d-proton/version lib/wine/vkd3d-proton/version 2>/dev/null || true
+
       - name: Archive build
         working-directory: ./build/
         run: tar -czvf ${{ env.RELEASE_VERSION }}.tar.gz ${{ env.RELEASE_VERSION }}
