@@ -45,7 +45,7 @@ jobs:
           sleep 3
 
       - name: Install dependencies apt
-        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox gcc-multilib gcc-i686-linux-gnu g++-multilib meson ninja-build gcc-multilib g++-multilib
+        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox gcc-multilib meson ninja-build gcc-multilib g++-multilib
 
       - name: apply patches
         run: ./patches/protonprep-valve-staging.sh  || true
@@ -66,9 +66,9 @@ jobs:
         run: ../configure.sh --build-name="GE-Proton7-55-P5R" --enable-ccache --no-proton-sdk
 
       # Build name following convention: Proton-<tag>
-      - name: Build proton
+      - name: Build proton (64-bit only)
         working-directory: ./build/
-        run: make dist
+        run: make all64
 
       - name: Rename directory
         working-directory: ./build/
