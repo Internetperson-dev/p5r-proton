@@ -2,6 +2,12 @@ name: Build Proton-GE
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
 
 permissions:
   contents: write
@@ -24,9 +30,13 @@ jobs:
       - name: Display version
         run: echo ${{ env.RELEASE_VERSION }}
 
-      # Added nasm and yasm here to fix the FFmpeg assembly build issue
+      # Install build dependencies + python pip for upgrading meson
       - name: Install dependencies apt
-        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm
+        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build
+
+      # Upgrade meson via pip so it meets the >= 1.3.0 requirement
+      - name: Upgrade Meson via pip
+        run: sudo pip3 install --upgrade meson
 
       - name: apply patches
         run: ./patches/protonprep-valve-staging.sh || true
