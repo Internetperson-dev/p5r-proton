@@ -1,5 +1,13 @@
+name: Build Proton-GE
+
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
 
 permissions:
   contents: write
@@ -7,12 +15,12 @@ permissions:
 jobs:
   build-proton-ge:
     runs-on: ubuntu-latest
-    steps:
     
+    steps:
       - name: Get branch names
         id: branch-name
         uses: tj-actions/branch-names@v5.1
-    
+
       - name: Clone repo
         run: git clone -b ${{ steps.branch-name.outputs.current_branch }} --jobs 20 --recurse-submodules ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} .
 
@@ -23,10 +31,13 @@ jobs:
         run: echo ${{ env.RELEASE_VERSION }}
 
       - name: Install dependencies apt
-        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox jq zstd
+        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build
+
+      - name: Upgrade Meson via pip
+        run: sudo pip3 install --upgrade meson
 
       - name: apply patches
-        run: ./patches/protonprep-valve-staging.sh  || true
+        run: ./patches/protonprep-valve-staging.sh || true
 
       - name: Create dir structure
         run: mkdir build
@@ -42,6 +53,12 @@ jobs:
       - name: Configure build proton
         working-directory: ./build/
         run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
+
+      # Disable container requirement flag in Makefile so it builds natively on the host runner
+      - name: Disable container requirement in Makefile
+        run: |
+          sed -i 's/CONTAINER=1/CONTAINER=0/g' build/Makefile || true
+          sed -i 's/container-build//g' build/Makefile || true
 
       # Build name following convention: Proton-<tag>
       - name: Build proton
@@ -60,58 +77,21 @@ jobs:
           mv libmspack.so.0.1.0 ../files/lib64/ && \
           rm cabextract_1.9-1.debian.tar.xz libmspack_0.10.1-1.debian.tar.xz
 
-      - name: Patch latest DXVK and vkd3d-proton DLLs
-        working-directory: ./build/${{ env.RELEASE_VERSION }}/files/
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tmp="$RUNNER_TEMP/gpu-dlls"
-          rm -rf "$tmp"
-          mkdir -p "$tmp/dxvk" "$tmp/vkd3d-proton"
-
-          # Resolve the latest release assets from GitHub
-          dxvk_url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-            https://api.github.com/repos/doitsujin/dxvk/releases/latest \
-            | jq -r '[.assets[] | select(.name | test("^dxvk-[0-9].*\\.tar\\.gz$"))][0].browser_download_url')
-          vkd3d_url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-            https://api.github.com/repos/HansKristian-Work/vkd3d-proton/releases/latest \
-            | jq -r '[.assets[] | select(.name | endswith(".tar.zst"))][0].browser_download_url')
-
-          test -n "$dxvk_url"
-          test -n "$vkd3d_url"
-
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$dxvk_url" -o "$tmp/dxvk.tar.gz"
-          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$vkd3d_url" -o "$tmp/vkd3d-proton.tar.zst"
-
-          tar -xzf "$tmp/dxvk.tar.gz" -C "$tmp/dxvk" --strip-components=1
-          tar --zstd -xf "$tmp/vkd3d-proton.tar.zst" -C "$tmp/vkd3d-proton" --strip-components=1
-
-          # Replace the DLLs bundled by the Proton build with the latest releases
-          cp -f "$tmp"/dxvk/x64/*.dll lib64/wine/dxvk/
-          cp -f "$tmp"/dxvk/x32/*.dll lib/wine/dxvk/
-          cp -f "$tmp"/vkd3d-proton/x64/*.dll lib64/wine/vkd3d-proton/
-          cp -f "$tmp"/vkd3d-proton/x86/*.dll lib/wine/vkd3d-proton/
-
-          echo "Patched DXVK DLLs: $(basename "$dxvk_url")"
-          echo "Patched vkd3d-proton DLLs: $(basename "$vkd3d_url")"
-
       - name: Archive build
         working-directory: ./build/
         run: tar -czvf ${{ env.RELEASE_VERSION }}.tar.gz ${{ env.RELEASE_VERSION }}
 
-      # 1. Save artifact BEFORE uploading in case the upload step fails
+      # Save artifact BEFORE uploading in case the release upload step fails
       - name: Upload build artifact (Backup)
         uses: actions/upload-artifact@v4
         with:
           name: proton-ge-${{ env.RELEASE_VERSION }}
           path: build/${{ env.RELEASE_VERSION }}.tar.gz
 
-      # 2. Upload binaries to release using the automatic token via standard GitHub token permissions
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          repo_token: ${{ secrets.PROTON_GE_GITHUB_ACTIONS_BUILD }}
           file: build/${{ env.RELEASE_VERSION }}.tar.gz
           file_glob: true
           tag: "${{ env.RELEASE_VERSION }}-build-${{ github.run_number }}"
