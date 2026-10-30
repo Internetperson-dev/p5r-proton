@@ -19,6 +19,13 @@ jobs:
       - name: Display version
         run: echo ${{ env.RELEASE_VERSION }}
 
+      - name: Install docker and start dockerd
+        run: |
+          sudo apt update && sudo apt install -y docker.io
+          sudo nohup dockerd --host=unix:///tmp/docker.sock > /dev/null 2>&1 &
+          echo "DOCKER_HOST=unix:///tmp/docker.sock" >> $GITHUB_ENV
+          sleep 3
+
       - name: Install dependencies apt
         run: sudo apt update && sudo apt-get install -y ccache fontforge-nox
 
