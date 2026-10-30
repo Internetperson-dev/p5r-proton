@@ -44,7 +44,7 @@ jobs:
 
       - name: Configure build proton
         working-directory: ./build/
-        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --no-proton-sdk
+        run: ../configure.sh --build-name="GE-Proton7-55-P5R" --enable-ccache --no-proton-sdk
 
       # Build name following convention: Proton-<tag>
       - name: Build proton

@@ -243,6 +243,7 @@ function parse_args() {
       arg_steamrt="$val"
     elif [[ $arg = --no-proton-sdk ]]; then
       arg_no_protonsdk=1
+      arg_protonsdk_image=""
     else
       err "Unrecognized option $arg"
       return 1
