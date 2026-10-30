@@ -30,10 +30,10 @@ jobs:
       - name: Display version
         run: echo ${{ env.RELEASE_VERSION }}
 
-      # Removed docker.io to avoid package conflicts with preinstalled containerd on ubuntu-latest
       - name: Install dependencies apt
         run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build
 
+      # Upgrade Meson on the host environment to satisfy >= 1.3.0 requirements
       - name: Upgrade Meson via pip
         run: sudo pip3 install --upgrade meson
 
@@ -51,14 +51,20 @@ jobs:
           restore-keys: |
             ccache-proton
 
+      # Configure build and clear out the SDK container version string 
+      # so it performs a native host build using our upgraded host tools/meson.
       - name: Configure build proton
         working-directory: ./build/
-        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --container-engine=docker
+        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
+        env:
+          protonsdk_version: ""
 
       # Build name following convention: Proton-<tag>
       - name: Build proton
         working-directory: ./build/
         run: make dist
+        env:
+          protonsdk_version: ""
 
       - name: Rename directory
         working-directory: ./build/
