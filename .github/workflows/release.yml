@@ -31,7 +31,7 @@ jobs:
         run: echo ${{ env.RELEASE_VERSION }}
 
       - name: Install dependencies apt
-        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build
+        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build docker.io
 
       - name: Upgrade Meson via pip
         run: sudo pip3 install --upgrade meson
@@ -46,17 +46,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-proton-${{ github.run_id }}  
+          key: ccache-proton-${{ github.run_id }}
           restore-keys: |
             ccache-proton
 
-      # Use make configure and clear out the protonsdk_version so it doesn't force the container SDK mismatch
+      # Explicitly configure the container engine for Proton's build system
       - name: Configure build proton
-        run: |
-          cd build
-          ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
-        env:
-          protonsdk_version: ""
+        working-directory: ./build/
+        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --container-engine=docker
 
       # Build name following convention: Proton-<tag>
       - name: Build proton
