@@ -16,6 +16,9 @@ jobs:
       - name: Clone repo
         run: git clone -b ${{ steps.branch-name.outputs.current_branch }} --jobs 20 --recurse-submodules ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} .
 
+      - name: Update submodules to latest upstream
+        run: git submodule update --remote --init --recursive --jobs 20
+
       - name: Get Proton Versions
         run: echo "RELEASE_VERSION=$(cat VERSION)" >> $GITHUB_ENV
         
