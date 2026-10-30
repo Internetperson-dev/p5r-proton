@@ -50,10 +50,10 @@ jobs:
           restore-keys: |
             ccache-proton
 
-      # Added --disable-asm to bypass FFmpeg assembly compilation issues
+      # Added --no-proton-sdk to use host tools/upgraded meson instead of the old container SDK
       - name: Configure build proton
         working-directory: ./build/
-        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --disable-asm
+        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --no-proton-sdk
 
       # Build name following convention: Proton-<tag>
       - name: Build proton
