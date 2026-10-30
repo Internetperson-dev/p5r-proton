@@ -44,9 +44,7 @@ jobs:
 
       - name: Configure build proton
         working-directory: ./build/
-        env:
-          STEAMRT_IMAGE: ""
-        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
+        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --no-proton-sdk
 
       # Build name following convention: Proton-<tag>
       - name: Build proton
