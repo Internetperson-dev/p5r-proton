@@ -102,7 +102,7 @@ MAKECMDGOALS32 := $(filter-out all32,$(filter %32,$(MAKECMDGOALS)))
 MAKECMDGOALS64 := $(filter-out all64,$(filter %64,$(MAKECMDGOALS)))
 CONTAINERGOALS := $(MAKECMDGOALS32) $(MAKECMDGOALS64) $(filter fonts,$(MAKECMDGOALS))
 
-all: all64 fonts
+all: all32 all64 fonts
 .PHONY: all
 
 all32 $(MAKECMDGOALS32):
