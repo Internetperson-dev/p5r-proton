@@ -30,11 +30,9 @@ jobs:
       - name: Display version
         run: echo ${{ env.RELEASE_VERSION }}
 
-      # Install build dependencies + python pip for upgrading meson
       - name: Install dependencies apt
         run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build
 
-      # Upgrade meson via pip so it meets the >= 1.3.0 requirement
       - name: Upgrade Meson via pip
         run: sudo pip3 install --upgrade meson
 
@@ -52,9 +50,10 @@ jobs:
           restore-keys: |
             ccache-proton
 
+      # Added --disable-asm to bypass FFmpeg assembly compilation issues
       - name: Configure build proton
         working-directory: ./build/
-        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
+        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache --disable-asm
 
       # Build name following convention: Proton-<tag>
       - name: Build proton
