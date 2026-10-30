@@ -353,10 +353,6 @@
     
     echo "WINE: -FSR- set 'balanced' default mode if no mode is set, and dont set any default mode if a custom mode is set"
     patch -Np1 < ../patches/proton/72-fsr-use-balanced-default-mode.patch
-
-    # https://github.com/GloriousEggroll/proton-ge-custom/issues/873
-    echo "WINE: only check the kernel clocksource for QPC at start-up (P5R Reloaded-II mods crash)"
-    patch -Np1 < ../patches/proton/0002-ntdll-Only-read-the-kernel-clocksource-for-QPC-at-start-up.patch
     
 
 ### END PROTON PATCH SECTION ###

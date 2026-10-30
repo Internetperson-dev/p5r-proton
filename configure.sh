@@ -126,11 +126,7 @@ function configure() {
     CONTAINER_MOUNT_OPTS=:Z
   fi
 
-  if [[ -n "$arg_no_protonsdk" ]]; then
-    stat "No proton SDK specified (--no-proton-sdk), skipping container engine check."
-    arg_container_engine=""
-    ROOTLESS_CONTAINER=0
-  elif [[ -n "$arg_container_engine" ]]; then
+  if [[ -n "$arg_container_engine" ]]; then
     check_container_engine "$arg_container_engine" || die "Specified container engine \"$arg_container_engine\" doesn't work"
   else
     stat "Trying to find usable container engine."
@@ -247,7 +243,6 @@ function parse_args() {
       arg_steamrt="$val"
     elif [[ $arg = --no-proton-sdk ]]; then
       arg_no_protonsdk=1
-      arg_protonsdk_image=""
     else
       err "Unrecognized option $arg"
       return 1

@@ -10,27 +10,8 @@ jobs:
         id: branch-name
         uses: tj-actions/branch-names@v5.1
     
-      - name: Cache submodules
-        uses: actions/cache@v4
-        with:
-          path: |
-            .git/modules
-            wine
-            wine-staging
-            dxvk
-            vkd3d-proton
-            FFmpeg
-            glslang
-            gst-plugins-rs
-          key: submodules-${{ github.sha }}
-          restore-keys: |
-            submodules-
-
       - name: Clone repo
-        run: git clone -b ${{ steps.branch-name.outputs.current_branch }} --jobs 20 ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} .
-
-      - name: Restore submodules
-        run: git submodule update --init --recursive --jobs 20
+        run: git clone -b ${{ steps.branch-name.outputs.current_branch }} --jobs 20 --recurse-submodules ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} .
 
       - name: Get Proton Versions
         run: echo "RELEASE_VERSION=$(cat VERSION)" >> $GITHUB_ENV
@@ -38,14 +19,8 @@ jobs:
       - name: Display version
         run: echo ${{ env.RELEASE_VERSION }}
 
-      - name: Install docker and start dockerd
-        run: |
-          sudo nohup dockerd --host=unix:///tmp/docker.sock > /dev/null 2>&1 &
-          echo "DOCKER_HOST=unix:///tmp/docker.sock" >> $GITHUB_ENV
-          sleep 3
-
       - name: Install dependencies apt
-        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox meson ninja-build gcc-13-i686-linux-gnu
+        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox
 
       - name: apply patches
         run: ./patches/protonprep-valve-staging.sh  || true
@@ -54,7 +29,7 @@ jobs:
         run: mkdir build
 
       - name: Create/Download ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v2
         with:
           path: ~/.ccache
           key: ccache-proton-${{ github.run_id }}
@@ -63,12 +38,12 @@ jobs:
 
       - name: Configure build proton
         working-directory: ./build/
-        run: ../configure.sh --build-name="GE-Proton7-55-P5R" --enable-ccache --no-proton-sdk
+        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
 
       # Build name following convention: Proton-<tag>
-      - name: Build proton (64-bit only)
+      - name: Build proton
         working-directory: ./build/
-        run: make all64
+        run: make dist
 
       - name: Rename directory
         working-directory: ./build/
