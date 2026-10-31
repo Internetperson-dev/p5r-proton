@@ -1,106 +1,41 @@
-name: Build Proton-GE
+name: Release
 
 on:
   workflow_dispatch:
   push:
     paths:
       - '.github/workflows/**'
-  pull_request:
-    paths:
-      - '.github/workflows/**'
-
-permissions:
-  contents: write
 
 jobs:
-  build-proton-ge:
+  build:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Get branch names
-        id: branch-name
-        uses: tj-actions/branch-names@v5.1
-
-      - name: Clone repo
-        run: git clone -b ${{ steps.branch-name.outputs.current_branch }} --jobs 20 --recurse-submodules ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY} .
-
-      - name: Get Proton Versions
-        run: echo "RELEASE_VERSION=$(cat VERSION)" >> $GITHUB_ENV
-        
-      - name: Display version
-        run: echo ${{ env.RELEASE_VERSION }}
-
-      - name: Install dependencies apt
-        run: sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build
-
-      # Upgrade Meson on the host environment to satisfy >= 1.3.0 requirements
-      - name: Upgrade Meson via pip
-        run: sudo pip3 install --upgrade meson
-
-      - name: apply patches
-        run: ./patches/protonprep-valve-staging.sh || true
-
-      - name: Create dir structure
-        run: mkdir build
-
-      - name: Create/Download ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ccache-proton-${{ github.run_id }}
-          restore-keys: |
-            ccache-proton
-
-      # Configure build and clear out the SDK container version string 
-      # so it performs a native host build using our upgraded host tools/meson.
-      - name: Configure build proton
-        working-directory: ./build/
-        run: ../configure.sh --build-name="${{ env.RELEASE_VERSION }}" --enable-ccache
-        env:
-          protonsdk_version: ""
-
-      # Build name following convention: Proton-<tag>
-      - name: Build proton
-        working-directory: ./build/
-        run: make dist
-        env:
-          protonsdk_version: ""
-
-      - name: Rename directory
-        working-directory: ./build/
-        run: mv dist ${{ env.RELEASE_VERSION }}
-
-      - name: Move files to their right folder
-        working-directory: ./build/${{ env.RELEASE_VERSION }}/protonfixes/
-        run: |
-          mv cabextract ../files/bin/ && \
-          mv libmspack.so.0 ../files/lib64/ && \
-          mv libmspack.so.0.1.0 ../files/lib64/ && \
-          rm cabextract_1.9-1.debian.tar.xz libmspack_0.10.1-1.debian.tar.xz
-
-      - name: Fix DLL permissions to match installed GE-Proton
-        working-directory: ./build/${{ env.RELEASE_VERSION }}/files/
-        run: |
-          # Ensure DLL permissions match installed GE-Proton11-7 reference
-          chmod 755 lib64/wine/dxvk/*.dll lib/wine/dxvk/*.dll lib64/wine/vkd3d-proton/*.dll lib/wine/vkd3d-proton/*.dll 2>/dev/null || true
-          chmod 444 lib64/wine/dxvk/version lib/wine/dxvk/version lib64/wine/vkd3d-proton/version lib/wine/vkd3d-proton/version 2>/dev/null || true
-
-      - name: Archive build
-        working-directory: ./build/
-        run: tar -czvf ${{ env.RELEASE_VERSION }}.tar.gz ${{ env.RELEASE_VERSION }}
-
-      # Save artifact BEFORE uploading in case the release upload step fails
-      - name: Upload build artifact (Backup)
-        uses: actions/upload-artifact@v4
-        with:
-          name: proton-ge-${{ env.RELEASE_VERSION }}
-          path: build/${{ env.RELEASE_VERSION }}.tar.gz
-
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.PROTON_GE_GITHUB_ACTIONS_BUILD }}
-          file: build/${{ env.RELEASE_VERSION }}.tar.gz
-          file_glob: true
-          tag: "${{ env.RELEASE_VERSION }}-build-${{ github.run_number }}"
-          overwrite: false
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        submodules: recursive
+    - name: Install dependencies
+      run: |
+        sudo apt update && sudo apt-get install -y ccache fontforge-nox nasm yasm python3-pip ninja-build
+        sudo pip3 install --upgrade meson
+    - name: Apply patches
+      run: ./patches/protonprep-valve-staging.sh || true
+    - name: Create build dir
+      run: mkdir -p build
+    - name: Configure
+      working-directory: ./build
+      run: ../configure.sh --build-name="proton-build" --enable-ccache
+      env:
+        protonsdk_version: ""
+    - name: Build
+      working-directory: ./build
+      run: make dist
+      env:
+        protonsdk_version: ""
+    - name: Archive
+      working-directory: ./build
+      run: tar --exclude-vcs --exclude='.git' -czvf proton.tar.gz dist
+    - uses: actions/upload-artifact@v4
+      with:
+        name: proton-x86_64
+        path: build/proton.tar.gz
