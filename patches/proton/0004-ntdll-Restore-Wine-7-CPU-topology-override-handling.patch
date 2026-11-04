@@ -1,0 +1,313 @@
+From: p5r-proton
+Subject: ntdll: restore Wine 7 CPU topology override handling
+
+Proton 8 moved to a Wine 8 base and Persona 5 Royal regressed from being
+GPU-bound to CPU-bound with low CPU/GPU utilisation.  As a targeted
+experiment, restore the Wine 7 CPU topology behaviour while keeping the
+modern Wine base:
+
+- WINE_CPU_TOPOLOGY requires an explicit logical count and host CPU map
+  again; Wine 11's automatic "pick N CPUs" and hybrid performance-core
+  ("P" prefix) selection are removed.
+- The SMT override is tracked with Wine 7's single boolean instead of
+  per-CPU thread sibling masks.
+- RelationProcessorCore entries always report EfficiencyClass 0, as Wine 7
+  did, instead of deriving it from /sys/devices/cpu_core.
+
+The generic (non-override) CPU enumeration path is left untouched.
+diff --git a/dlls/ntdll/unix/system.c b/dlls/ntdll/unix/system.c
+index 3a21539f66c..ac282e3e9b9 100644
+--- a/dlls/ntdll/unix/system.c
++++ b/dlls/ntdll/unix/system.c
+@@ -255,8 +255,6 @@ static char cpu_vendor[13];
+ static USHORT cpu_level, cpu_revision;
+ static ULONGLONG cpu_id;
+ static ULONGLONG cpu_features_bitmap[2];
+-static ULONG *performance_cores;
+-static unsigned int performance_cores_capacity = 0;
+ static SYSTEM_LOGICAL_PROCESSOR_INFORMATION *logical_proc_info;
+ static unsigned int logical_proc_info_len, logical_proc_info_alloc_len;
+ static SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *logical_proc_info_ex;
+@@ -277,7 +275,7 @@ static const WCHAR Time_ZonesW[] = { '\\','R','e','g','i','s','t','r','y','\\',
+ static struct
+ {
+     struct cpu_topology_override mapping;
+-    ULONG_PTR siblings_mask[MAXIMUM_PROCESSORS];
++    BOOL smt;
+ }
+ cpu_override;
+ 
+@@ -840,25 +838,12 @@ void init_shared_data_cpuinfo( KUSER_SHARED_DATA *data )
+ 
+ #endif /* End architecture specific feature detection for CPUs */
+ 
+-static void fill_performance_core_info(void);
+ static BOOL sysfs_parse_bitmap(const char *filename, ULONG_PTR *mask);
+ 
+-static ULONG popcount( ULONG val )
+-{
+-#if defined(__MINGW32__)
+-    return __builtin_popcount( val );
+-#else
+-    val -= val >> 1 & 0x55555555;
+-    val = (val & 0x33333333) + (val >> 2 & 0x33333333);
+-    return ((val + (val >> 4)) & 0x0f0f0f0f) * 0x01010101 >> 24;
+-#endif
+-}
+-
+ void fill_cpu_override(void)
+ {
+     const char *env_override = getenv("WINE_CPU_TOPOLOGY");
+     unsigned int host_cpu_count;
+-    BOOL smt = FALSE;
+     unsigned int i;
+     char *s;
+ 
+@@ -877,7 +862,7 @@ void fill_cpu_override(void)
+     size_t len = sizeof(host_cpu_count);
+     mib[0] = CTL_HW;
+     mib[1] = HW_NCPU;
+-    if (sysctl(mib, 2, &num, &len, NULL, 0) != 0)
++    if (sysctl(mib, 2, &host_cpu_count, &len, NULL, 0) != 0)
+     {
+         ERR("Failed to detect the number of processors.\n");
+         return;
+@@ -893,40 +878,11 @@ void fill_cpu_override(void)
+         host_cpu_count = MAXIMUM_PROCESSORS;
+     }
+ 
+-    if (env_override[0] == 'p' || env_override[0] == 'P')
+-    {
+-        unsigned int count = host_cpu_count;
+-
+-        if (env_override[1])
+-        {
+-            count = strtol( env_override + 1, &s, 10 );
+-            if (!count || s == env_override + 1) goto error;
+-        }
+-        else s = env_override + 1;
+-        if (*s) goto error;
+-        fill_performance_core_info();
+-        if (!performance_cores_capacity)
+-        {
+-            TRACE( "No performance cores.\n" );
+-            return;
+-        }
+-        for (i = 0; i < performance_cores_capacity; ++i)
+-        {
+-            if (!performance_cores[i]) continue;
+-            cpu_override.mapping.cpu_count += popcount( performance_cores[i] );
+-        }
+-        if (!cpu_override.mapping.cpu_count)
+-        {
+-            TRACE( "No performance cores.\n" );
+-            return;
+-        }
+-        cpu_override.mapping.cpu_count = min( cpu_override.mapping.cpu_count, count );
+-    }
+-    else
+-    {
+-        cpu_override.mapping.cpu_count = strtol( env_override, &s, 10 );
+-        if (s == env_override) goto error;
+-    }
++    /* Wine 7 semantics: WINE_CPU_TOPOLOGY must contain an explicit host CPU
++     * mapping. Don't auto-select CPUs based on hybrid-core information. */
++    cpu_override.mapping.cpu_count = strtol(env_override, &s, 10);
++    if (s == env_override)
++        goto error;
+ 
+     if (!cpu_override.mapping.cpu_count || cpu_override.mapping.cpu_count > MAXIMUM_PROCESSORS)
+     {
+@@ -934,58 +890,6 @@ void fill_cpu_override(void)
+         goto error;
+     }
+ 
+-    if (!*s)
+-    {
+-        /* Auto assign given number of logical CPUs. */
+-        static const char core_info[] = "/sys/devices/system/cpu/cpu%u/topology/%s";
+-        char name[MAX_PATH];
+-        unsigned int attempt, count, j;
+-        ULONG_PTR masks[MAXIMUM_PROCESSORS];
+-
+-        if (cpu_override.mapping.cpu_count >= host_cpu_count)
+-        {
+-            TRACE( "Override cpu count %u >= host cpu count %u.\n", cpu_override.mapping.cpu_count, host_cpu_count );
+-            cpu_override.mapping.cpu_count = 0;
+-            return;
+-        }
+-
+-        fill_performance_core_info();
+-
+-        for (i = 0; i < host_cpu_count; ++i)
+-        {
+-            snprintf(name, sizeof(name), core_info, i, "thread_siblings");
+-            masks[i] = 0;
+-            sysfs_parse_bitmap(name, &masks[i]);
+-        }
+-        for (attempt = 0; attempt < 3; ++attempt)
+-        {
+-            count = 0;
+-            for (i = 0; i < host_cpu_count && count < cpu_override.mapping.cpu_count; ++i)
+-            {
+-                if (attempt < 2 && performance_cores_capacity)
+-                {
+-                    if (i / 32 >= performance_cores_capacity) break;
+-                    if (!(performance_cores[i / 32] & (1 << (i % 32)))) goto skip_cpu;
+-                }
+-                cpu_override.mapping.host_cpu_id[count] = i;
+-                cpu_override.siblings_mask[count] = (ULONG_PTR)1 << count;
+-                for (j = 0; j < count; ++j)
+-                {
+-                    if (!(masks[cpu_override.mapping.host_cpu_id[j]] & masks[i])) continue;
+-                    if (attempt < 1) goto skip_cpu;
+-                    cpu_override.siblings_mask[j] |= (ULONG_PTR)1 << count;
+-                    cpu_override.siblings_mask[count] |= (ULONG_PTR)1 << j;
+-                }
+-                ++count;
+-skip_cpu:
+-                ;
+-            }
+-            if (count == cpu_override.mapping.cpu_count) break;
+-        }
+-        assert( count == cpu_override.mapping.cpu_count );
+-        goto done;
+-    }
+-
+     if (tolower(*s) == 's')
+     {
+         cpu_override.mapping.cpu_count *= 2;
+@@ -994,7 +898,7 @@ skip_cpu:
+             ERR("Logical CPU count exceeds limit %u.\n", MAXIMUM_PROCESSORS);
+             goto error;
+         }
+-        smt = TRUE;
++        cpu_override.smt = TRUE;
+         ++s;
+     }
+     if (*s != ':')
+@@ -1017,8 +921,6 @@ skip_cpu:
+         }
+ 
+         cpu_override.mapping.host_cpu_id[i] = strtol(s, &next, 10);
+-        if (smt) cpu_override.siblings_mask[i] = (ULONG_PTR)3 << (i & ~1);
+-        else     cpu_override.siblings_mask[i] = (ULONG_PTR)1 << i;
+         if (next == s)
+             goto error;
+         if (cpu_override.mapping.host_cpu_id[i] >= host_cpu_count)
+@@ -1032,7 +934,6 @@ skip_cpu:
+     if (*s)
+         goto error;
+ 
+-done:
+     if (ERR_ON(ntdll))
+     {
+         MESSAGE("wine: overriding CPU configuration, %u logical CPUs, host CPUs ", cpu_override.mapping.cpu_count);
+@@ -1106,7 +1007,6 @@ static DWORD count_bits( ULONG_PTR mask )
+ static BOOL logical_proc_info_ex_add_by_id( LOGICAL_PROCESSOR_RELATIONSHIP rel, DWORD id, ULONG_PTR mask )
+ {
+     SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *dataex;
+-    unsigned int phys_cpu_id;
+     unsigned int ofs = 0;
+ 
+     while (ofs < logical_proc_info_ex_size)
+@@ -1137,11 +1037,8 @@ static BOOL logical_proc_info_ex_add_by_id( LOGICAL_PROCESSOR_RELATIONSHIP rel,
+     else
+         dataex->Processor.Flags = 0;
+ 
+-    phys_cpu_id = cpu_override.mapping.cpu_count ? cpu_override.mapping.host_cpu_id[id] : id;
+-    if (rel == RelationProcessorCore && phys_cpu_id / 32 < performance_cores_capacity)
+-        dataex->Processor.EfficiencyClass = (performance_cores[phys_cpu_id / 32] >> (phys_cpu_id % 32)) & 1;
+-    else
+-        dataex->Processor.EfficiencyClass = 0;
++    /* Wine 7 always reports a single efficiency class. */
++    dataex->Processor.EfficiencyClass = 0;
+     dataex->Processor.GroupCount = 1;
+     dataex->Processor.GroupMask[0].Mask = mask;
+     dataex->Processor.GroupMask[0].Group = 0;
+@@ -1345,45 +1242,6 @@ static BOOL sysfs_count_list_elements(const char *filename, unsigned int *result
+     return TRUE;
+ }
+ 
+-static void fill_performance_core_info(void)
+-{
+-    FILE *fpcore_list;
+-    unsigned int beg, end, i;
+-    char op = ',';
+-    ULONG *p;
+-
+-    if (performance_cores_capacity) return;
+-
+-    fpcore_list = fopen("/sys/devices/cpu_core/cpus", "r");
+-    if (!fpcore_list) return;
+-
+-    performance_cores = calloc(16, sizeof(ULONG));
+-    if (!performance_cores) goto done;
+-    performance_cores_capacity = 16;
+-
+-    while (!feof(fpcore_list) && op == ',')
+-    {
+-        if (!fscanf(fpcore_list, "%u %c ", &beg, &op)) break;
+-        if (op == '-') fscanf(fpcore_list, "%u %c ", &end, &op);
+-        else end = beg;
+-
+-        for(i = beg; i <= end; i++)
+-        {
+-            if (i / 32 >= performance_cores_capacity)
+-            {
+-                p = realloc(performance_cores, performance_cores_capacity * 2 * sizeof(ULONG));
+-                if (!p) goto done;
+-                memset(p + performance_cores_capacity, 0, performance_cores_capacity * sizeof(ULONG));
+-                performance_cores = p;
+-                performance_cores_capacity *= 2;
+-            }
+-            performance_cores[i / 32] |= 1 << (i % 32);
+-        }
+-    }
+-done:
+-    fclose(fpcore_list);
+-}
+-
+ /* for 'data', max_len is the array count. for 'dataex', max_len is in bytes */
+ static NTSTATUS create_logical_proc_info(void)
+ {
+@@ -1412,8 +1270,6 @@ static NTSTATUS create_logical_proc_info(void)
+                 max_cpus, MAXIMUM_PROCESSORS);
+     }
+ 
+-    fill_performance_core_info();
+-
+     fcpu_list = fopen("/sys/devices/system/cpu/online", "r");
+     if (!fcpu_list) return STATUS_NOT_IMPLEMENTED;
+ 
+@@ -1465,7 +1321,7 @@ static NTSTATUS create_logical_proc_info(void)
+             snprintf(name, sizeof(name), core_info, i, "thread_siblings");
+             if (cpu_override.mapping.cpu_count)
+             {
+-                thread_mask = cpu_override.siblings_mask[i];
++                thread_mask = cpu_override.smt ? (ULONG_PTR)0x3 << (i & ~1) : (ULONG_PTR)1 << i;
+             }
+             else
+             {
+@@ -1476,9 +1332,7 @@ static NTSTATUS create_logical_proc_info(void)
+ 
+             if (cpu_override.mapping.cpu_count)
+             {
+-                assert( thread_mask );
+-                for (phys_core = 0; ; ++phys_core)
+-                    if (thread_mask & ((ULONG_PTR)1 << phys_core)) break;
++                phys_core = cpu_override.smt ? i / 2 : i;
+             }
+             else
+             {
+@@ -1616,10 +1470,6 @@ static NTSTATUS create_logical_proc_info(void)
+ 
+     logical_proc_info_add_group( num_cpus, all_cpus_mask );
+ 
+-    performance_cores_capacity = 0;
+-    free(performance_cores);
+-    performance_cores = NULL;
+-
+     return STATUS_SUCCESS;
+ }
+ 

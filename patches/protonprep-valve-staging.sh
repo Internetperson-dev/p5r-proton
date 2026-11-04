@@ -575,6 +575,11 @@ apply_all_in_dir() {
     echo "WINE: only check the kernel clocksource for QPC at start-up (P5R Reloaded-II mods crash)"
     apply_patch "../patches/proton/0002-ntdll-Only-read-the-kernel-clocksource-for-QPC-at-start-up.patch"
 
+    # Persona 5 Royal: Proton 8 (Wine 8) CPU-bound regression. Restore the Wine 7
+    # WINE_CPU_TOPOLOGY semantics and drop hybrid-core EfficiencyClass reporting.
+    echo "WINE: -PERF- restore Wine 7 CPU topology override handling (Persona 5 Royal)"
+    apply_patch "../patches/proton/0004-ntdll-Restore-Wine-7-CPU-topology-override-handling.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 

@@ -1,60 +1,112 @@
-name: Release
+name: Build Proton
+
+# This is intentionally a single, self-contained workflow so that it can be
+# reproduced locally with `act`. Point act at this file explicitly:
+#
+#   act -W .github/workflows/release.yml -j build
+#
+# Add --artifact-server-path if you want act to collect the build artifacts:
+#
+#   act -W .github/workflows/release.yml -j build \
+#       --artifact-server-path /tmp/act-artifacts
+#
+# The repository's .actrc already sets -W to this workflow.
+#
+# The build runs inside the official Proton SDK image instead of starting a
+# Docker container from inside the job, so no Docker socket or
+# Docker-in-Docker setup is required.
 
 on:
-  release:
-    types: [ published ]
+  workflow_dispatch:
   push:
+    branches:
+      - main
+      - p5r-ge11-12
     tags:
-      - 'GE-Proton*-*'
+      - 'GE-Proton*'
+
+permissions:
+  contents: write
 
 concurrency:
-  group: ${{ github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # Keep this in sync with Makefile.in's STEAMRT_IMAGE.
+  PROTON_SDK_IMAGE: registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:4.0.20260714.251823-0
 
 jobs:
   build:
     name: Build
-    uses: ./.github/workflows/_job_build.yml
-    with:
-      name: ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    container:
+      image: registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:4.0.20260714.251823-0
+    outputs:
+      name: ${{ steps.build_name.outputs.name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: false
+
+      - name: Checkout submodules
+        run: git submodule update --init --recursive --filter=tree:0
+
+      - name: Determine build name
+        id: build_name
+        run: echo "name=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Apply Proton-GE patches
+        run: |
+          # The patch stack mirrors the upstream GE build. Individual optional
+          # patches are allowed to fail; any failure here is visible in the log.
+          ./patches/protonprep-valve-staging.sh || true
+          # Strip binaries at compile time to save space.
+          patch -Np1 -i .github/patches/0001-build-strip-binaries-early.patch
+          mkdir -p build
+
+      - name: Configure
+        working-directory: build
+        run: |
+          ../configure.sh \
+            --build-name="${{ steps.build_name.outputs.name }}" \
+            --no-proton-sdk
+
+      - name: Build
+        working-directory: build
+        run: make -j"$(nproc)" redist
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build_name.outputs.name }}
+          path: |
+            build/${{ steps.build_name.outputs.name }}.tar.gz
+            build/${{ steps.build_name.outputs.name }}.sha512sum
+            build/SHA256SUMS
+          if-no-files-found: error
 
   release:
-    name: Release
+    name: Publish release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-        fetch-tags: true
-    - name: Tags
-      shell: bash
-      run: |
-        git fetch origin +refs/tags/*:refs/tags/*
-    - name: Create Release
-      id: create
-      shell: bash
-      run: |
-        if gh release view "${{ github.ref_name }}" --repo "${{ github.server_url }}/${{ github.repository }}" &>/dev/null; then
-          echo "Release ${{ github.ref_name }} already exists. Skipping creation."
-        else
-          gh release create "${{ github.ref_name }}" \
-            --latest \
-            --title "${{ github.ref_name }} Released" \
-            --notes-from-tag \
-            --verify-tag
-        fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-  upload:
-    name: Upload
-    needs: release
-    strategy:
-      matrix:
-        include:
-          - name: ${{ github.ref_name }}
-    uses: ./.github/workflows/_job_upload.yml
-    with:
-      version: ${{ github.ref_name }}
-      name: ${{ matrix.name }}
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.name }}
+          path: artifacts
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --latest \
+              --title "$GITHUB_REF_NAME Released" --notes-from-tag --verify-tag
+          fi
+          gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber

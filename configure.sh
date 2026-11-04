@@ -129,7 +129,7 @@ function configure() {
 
   # nothing specified, getting the default value from the Makefile to test the
   # container engine
-  if [[ -z $steamrt_image ]]; then
+  if [[ -z $steamrt_image && -z $arg_no_proton_sdk ]]; then
     steamrt_image="$(make --silent "SRCDIR=$srcdir" --file "$srcdir/Makefile.in" "TARGET_ARCH=$target_arch" get-steamrt-image)"
   fi
 
@@ -143,7 +143,11 @@ function configure() {
     CONTAINER_MOUNT_OPTS=:Z
   fi
 
-  if [[ -n "$arg_container_engine" ]]; then
+  if [[ -n "$arg_no_proton_sdk" ]]; then
+    info "Not using the Proton SDK container; building with the host toolchain."
+    arg_container_engine=""
+    ROOTLESS_CONTAINER=0
+  elif [[ -n "$arg_container_engine" ]]; then
     check_container_engine "$arg_container_engine" "$steamrt_image" || die "Specified container engine \"$arg_container_engine\" doesn't work"
   else
     stat "Trying to find usable container engine."
@@ -156,7 +160,11 @@ function configure() {
     fi
   fi
 
-  stat "Using $arg_container_engine."
+  if [[ -n "$arg_no_proton_sdk" ]]; then
+    stat "Building natively in the current environment."
+  else
+    stat "Using $arg_container_engine."
+  fi
 
   ## Write out config
   # Don't die after this point or we'll have rather unhelpfully deleted the Makefile
@@ -176,13 +184,18 @@ function configure() {
       echo "STEAMRT_IMAGE := $(escape_for_make "$arg_protonsdk_image")"
     fi
 
-    echo "ROOTLESS_CONTAINER := $ROOTLESS_CONTAINER"
-    echo "CONTAINER_ENGINE := $arg_container_engine"
-    if [[ -n "$arg_docker_opts" ]]; then
-      echo "DOCKER_OPTS := $arg_docker_opts"
-    fi
-    if [[ -n "$CONTAINER_MOUNT_OPTS" ]]; then
-      echo "CONTAINER_MOUNT_OPTS := $CONTAINER_MOUNT_OPTS"
+    if [[ -n "$arg_no_proton_sdk" ]]; then
+      # Run the in-container rules directly, without re-invoking a container engine.
+      echo "CONTAINER := 1"
+    else
+      echo "ROOTLESS_CONTAINER := $ROOTLESS_CONTAINER"
+      echo "CONTAINER_ENGINE := $arg_container_engine"
+      if [[ -n "$arg_docker_opts" ]]; then
+        echo "DOCKER_OPTS := $arg_docker_opts"
+      fi
+      if [[ -n "$CONTAINER_MOUNT_OPTS" ]]; then
+        echo "CONTAINER_MOUNT_OPTS := $CONTAINER_MOUNT_OPTS"
+      fi
     fi
     echo "ENABLE_CCACHE := 1"
 
@@ -200,6 +213,7 @@ function configure() {
 #
 
 arg_protonsdk_image=""
+arg_no_proton_sdk=""
 arg_build_name=""
 arg_target_arch=""
 arg_container_engine=""
@@ -255,6 +269,8 @@ function parse_args() {
     elif [[ $arg = --proton-sdk-image ]]; then
       val_used=1
       arg_protonsdk_image="$val"
+    elif [[ $arg = --no-proton-sdk ]]; then
+      arg_no_proton_sdk="1"
     else
       err "Unrecognized option $arg"
       return 1
@@ -316,6 +332,10 @@ usage() {
   "$1" "                                for build steps that must be run in an SDK"
   "$1" "                                environment.  See README.md for instructions to"
   "$1" "                                create this image."
+  "$1" ""
+  "$1" "    --no-proton-sdk             Build directly with the host toolchain, without"
+  "$1" "                                invoking a container engine. The host must already"
+  "$1" "                                provide the Steam Runtime SDK environment."
   exit 1;
 }
 
