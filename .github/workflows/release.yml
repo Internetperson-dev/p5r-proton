@@ -51,6 +51,9 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           submodules: false
+          # Preserve the build directory when act reuses its job container
+          # (`act --reuse`), so an interrupted run can resume incrementally.
+          clean: false
 
       - name: Checkout submodules
         run: git submodule update --init --recursive --filter=tree:0
@@ -78,6 +81,17 @@ jobs:
       - name: Build
         working-directory: build
         run: make -j"$(nproc)" redist
+
+      - name: Install Node.js for act
+        if: ${{ env.ACT }}
+        run: |
+          # act runs JavaScript actions (upload-artifact) inside this container,
+          # but the SDK image does not ship Node.js. GitHub-hosted runners
+          # inject it; act does not.
+          if ! command -v node >/dev/null 2>&1; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
+          fi
 
       - name: Upload tarball
         uses: actions/upload-artifact@v4
