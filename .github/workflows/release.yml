@@ -51,9 +51,6 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           submodules: false
-          # Preserve the build directory when act reuses its job container
-          # (`act --reuse`), so an interrupted run can resume incrementally.
-          clean: false
 
       - name: Checkout submodules
         run: git submodule update --init --recursive --filter=tree:0
