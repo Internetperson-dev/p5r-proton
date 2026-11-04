@@ -463,6 +463,33 @@ make redist &> log
 
 The build will be placed within the build directory as SOME-BUILD-NAME-HERE.tar.gz.
 
+### Building locally with `act`
+
+The repository ships a single self-contained workflow, `.github/workflows/release.yml`,
+that runs the whole build inside the official Proton SDK image. No Docker socket or
+Docker-in-Docker setup is required. `.actrc` already points `act` at that workflow, so:
+
+```sh
+act -j build
+```
+
+To collect the generated tarball and checksums through act's artifact server:
+
+```sh
+act -j build --artifact-server-path /tmp/act-artifacts
+```
+
+To reproduce the same native build outside act, run the build inside the SDK image:
+
+```sh
+docker run --rm -it -v "$PWD:$PWD" -w "$PWD" \
+  registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:4.0.20260714.251823-0
+./patches/protonprep-valve-staging.sh
+mkdir -p build && cd build
+../configure.sh --build-name="$(cat ../VERSION)" --no-proton-sdk
+make -j"$(nproc)" redist
+```
+
 ## Enabling
 
 1. Right click any game in Steam and click `Properties`.
