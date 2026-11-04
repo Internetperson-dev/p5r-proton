@@ -68,6 +68,15 @@ jobs:
           patch -Np1 -i .github/patches/0001-build-strip-binaries-early.patch
           mkdir -p build
 
+      - name: Verify Wine 7 CPU patch
+        run: |
+          # This patch is the entire point of this fork; never let a rebase or
+          # fuzz failure silently produce a build without it.
+          grep -q 'Wine 7 semantics: WINE_CPU_TOPOLOGY must contain' \
+            wine/dlls/ntdll/unix/system.c
+          ! grep -q 'performance_cores\|/sys/devices/cpu_core/cpus' \
+            wine/dlls/ntdll/unix/system.c
+
       - name: Configure
         working-directory: build
         run: |
