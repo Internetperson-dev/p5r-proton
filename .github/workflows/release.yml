@@ -77,6 +77,27 @@ jobs:
           ! grep -q 'performance_cores\|/sys/devices/cpu_core/cpus' \
             wine/dlls/ntdll/unix/system.c
 
+      - name: Verify Wine 7 sync semantics
+        run: |
+          # The yield/delay/signal-and-wait restore is what closes the remaining
+          # Persona 5 Royal CPU regression; never let it regress silently.
+          grep -q 'Wine 7 semantics: a yield is always reported' \
+            wine/dlls/ntdll/unix/sync.c
+          grep -q 'Wine 7 used usleep(0) here' \
+            wine/dlls/ntdll/unix/sync.c
+          ! grep -q 'RUSAGE_THREAD' \
+            wine/dlls/ntdll/unix/sync.c
+          grep -q 'Wine 7 always performed the signal and wait atomically' \
+            wine/dlls/ntdll/unix/sync.c
+
+      - name: Verify fsync default
+        run: |
+          # Persona 5 Royal: the build must default to fsync, not ntsync.
+          grep -q 'P5R build: default to the Wine 7-era fsync backend' \
+            proton
+          grep -q 'PROTON_ENABLE_NTSYNC' \
+            proton
+
       - name: Configure
         working-directory: build
         run: |

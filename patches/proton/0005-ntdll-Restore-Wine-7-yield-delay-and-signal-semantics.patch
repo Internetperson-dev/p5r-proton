@@ -1,0 +1,174 @@
+From: p5r-proton
+Subject: ntdll: restore Wine 7 yield, delay and signal-and-wait semantics
+
+Persona 5 Royal is CPU bound on modern Proton even though the GPU is mostly
+idle, and the regression is already present between GE-Proton 7 and 8.  The
+modern paths add measurable overhead to synchronization primitives that the
+game uses on hot paths:
+
+- NtYieldExecution() no longer performs two getrusage(RUSAGE_THREAD) calls
+  and always reports STATUS_SUCCESS on a successful sched_yield(), as in
+  Wine 7.  Sleep(0)/SwitchToThread() pay one syscall instead of three.
+- NtDelayExecution() uses usleep(0) for the implicit yield again and no
+  longer returns STATUS_NO_YIELD_PERFORMED for zero timeouts.  The alertable
+  path goes straight to the server, matching Wine 7.
+- NtSignalAndWaitForSingleObject() performs the signal and wait atomically
+  in the server again.  The in-process/fsync path needs two separate
+  operations and measures roughly twice as slow for this API.
+
+The rest of the modern synchronization code is left untouched.
+--- a/dlls/ntdll/unix/sync.c
++++ b/dlls/ntdll/unix/sync.c
+@@ -953,43 +953,6 @@
+     return ret;
+ }
+ 
+-static NTSTATUS inproc_signal_and_wait( HANDLE signal, HANDLE wait,
+-                                        BOOLEAN alertable, const LARGE_INTEGER *timeout )
+-{
+-    struct inproc_sync stack_signal, stack_wait, *signal_sync = &stack_signal, *wait_sync = &stack_wait;
+-    int alert_fd = 0;
+-    NTSTATUS ret;
+-
+-    if (do_fsync()) return fsync_signal_and_wait( signal, wait, alertable, timeout );
+-
+-    if (inproc_device_fd < 0) return STATUS_NOT_IMPLEMENTED;
+-
+-    if ((ret = get_inproc_sync( signal, INPROC_SYNC_UNKNOWN, 0, &stack_signal, &signal_sync ))) return ret;
+-    if ((ret = check_signal_access( signal_sync ))) goto done;
+-
+-    if ((ret = get_inproc_sync( wait, INPROC_SYNC_UNKNOWN, SYNCHRONIZE, &stack_wait, &wait_sync ))) goto done;
+-
+-    switch (signal_sync->type)
+-    {
+-    case INPROC_SYNC_EVENT:     ret = linux_set_event_obj( signal_sync->fd, NULL ); break;
+-    case INPROC_SYNC_MUTEX:     ret = linux_release_mutex_obj( signal_sync->fd, NULL ); break;
+-    case INPROC_SYNC_SEMAPHORE: ret = linux_release_semaphore_obj( signal_sync->fd, 1, NULL ); break;
+-    default: assert( 0 ); break;
+-    }
+-
+-    if (!ret)
+-    {
+-        if (alertable) alert_fd = get_inproc_alert_fd();
+-        ret = linux_wait_objs( inproc_device_fd, 1, &wait_sync->fd, WaitAny, alert_fd, timeout );
+-    }
+-
+-    release_inproc_sync( wait_sync );
+-done:
+-    release_inproc_sync( signal_sync );
+-    return ret;
+-}
+-
+-
+ /******************************************************************************
+  *              NtCreateSemaphore (NTDLL.@)
+  */
+@@ -2404,15 +2367,14 @@
+ {
+     union select_op select_op;
+     UINT flags = SELECT_INTERRUPTIBLE;
+-    NTSTATUS ret;
+ 
+     TRACE( "signal %p, wait %p, alertable %u, timeout %s\n", signal, wait, alertable, debugstr_timeout(timeout) );
+ 
+     if (!signal) return STATUS_INVALID_HANDLE;
+ 
+-    if ((ret = inproc_signal_and_wait( signal, wait, alertable, timeout )) != STATUS_NOT_IMPLEMENTED)
+-        return ret;
+-
++    /* Wine 7 always performed the signal and wait atomically in the server.
++       The later in-process/fsync path needs separate release and wait steps and
++       measurably regresses games that use this API on a hot path. */
+     if (alertable) flags |= SELECT_ALERTABLE;
+     select_op.signal_and_wait.op = SELECT_SIGNAL_AND_WAIT;
+     select_op.signal_and_wait.wait = wine_server_obj_handle( wait );
+@@ -2427,17 +2389,9 @@
+ NTSTATUS WINAPI NtYieldExecution(void)
+ {
+ #ifdef HAVE_SCHED_YIELD
+-#ifdef RUSAGE_THREAD
+-    struct rusage u1, u2;
+-    int ret;
+-
+-    ret = getrusage( RUSAGE_THREAD, &u1 );
+-#endif
++    /* Wine 7 semantics: a yield is always reported as successful and does not
++       pay for two getrusage() calls to detect whether a switch happened. */
+     sched_yield();
+-#ifdef RUSAGE_THREAD
+-    if (!ret) ret = getrusage( RUSAGE_THREAD, &u2 );
+-    if (!ret && u1.ru_nvcsw == u2.ru_nvcsw && u1.ru_nivcsw == u2.ru_nivcsw) return STATUS_NO_YIELD_PERFORMED;
+-#endif
+     return STATUS_SUCCESS;
+ #else
+     return STATUS_NO_YIELD_PERFORMED;
+@@ -2450,58 +2404,28 @@
+  */
+ NTSTATUS WINAPI NtDelayExecution( BOOLEAN alertable, const LARGE_INTEGER *timeout )
+ {
+-    unsigned int status = STATUS_SUCCESS;
+-
+-    /* if alertable, we need to query the server */
+-    if (alertable)
+-    {
+-        if (do_fsync())
+-        {
+-            NTSTATUS ret = fsync_wait_objects( 0, NULL, TRUE, TRUE, timeout );
+-            if (ret != STATUS_NOT_IMPLEMENTED)
+-                return ret;
+-        }
+-        /* Since server_wait will result in an unconditional implicit yield,
+-           we never return STATUS_NO_YIELD_PERFORMED */
+-        if ((status = server_wait( NULL, 0, SELECT_INTERRUPTIBLE | SELECT_ALERTABLE, timeout )) == STATUS_TIMEOUT)
+-            status = STATUS_SUCCESS;
+-        return status;
+-    }
++    /* if alertable, we need to query the server (Wine 7 did not try a fast path here) */
++    if (alertable) return server_wait( NULL, 0, SELECT_INTERRUPTIBLE | SELECT_ALERTABLE, timeout );
+ 
+     if (!timeout || timeout->QuadPart == TIMEOUT_INFINITE)  /* sleep forever */
+     {
+         for (;;) select( 0, NULL, NULL, NULL, NULL );
+     }
+-    else if (timeout->QuadPart < 0)
++    else
+     {
+-        timeout_t when = -timeout->QuadPart, diff;
+         LARGE_INTEGER now;
++        timeout_t when, diff;
+ 
+-        NtQueryPerformanceCounter( &now, NULL );
+-        when += now.QuadPart;
+-
+-        NtYieldExecution();
+-
+-        for (;;)
++        if ((when = timeout->QuadPart) < 0)
+         {
+-            struct timeval tv;
+-            NtQueryPerformanceCounter( &now, NULL );
+-            diff = (when - now.QuadPart + 9) / 10;
+-            if (diff <= 0) break;
+-            tv.tv_sec = diff / 1000000;
+-            tv.tv_usec = diff % 1000000;
+-            if (select( 0, NULL, NULL, NULL, &tv ) != -1) break;
++            NtQuerySystemTime( &now );
++            when = now.QuadPart - when;
+         }
+-    }
+-    else
+-    {
+-        timeout_t when = timeout->QuadPart, diff;
+-        LARGE_INTEGER now;
+ 
+-        /* Note that we yield after establishing the desired timeout, but
+-           we only care about the result of the yield for zero timeouts */
+-        status = NtYieldExecution();
+-        if (!when) return status;
++        /* Wine 7 used usleep(0) here; Wine 11's yield path does two
++           getrusage() calls and can report STATUS_NO_YIELD_PERFORMED. */
++        usleep(0);
++        if (!when) return STATUS_SUCCESS;
+ 
+         for (;;)
+         {

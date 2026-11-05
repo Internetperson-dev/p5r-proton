@@ -2398,12 +2398,18 @@ class Session:
         self.check_environment("PROTON_USE_HDR", "hdr")
         self.check_environment("PROTON_FORCE_HDR", "forcehdr")
         self.check_environment("PROTON_NO_NTSYNC", "nontsync")
+        self.check_environment("PROTON_ENABLE_NTSYNC", "ntsync")
         self.check_environment("PROTON_USE_WRITECOPY", "writecopy")
 
-        if "nontsync" in self.compat_config:
-            self.env.pop("WINENTSYNC", "")
-        else:
+        # P5R build: default to the Wine 7-era fsync backend. The ntsync backend
+        # is measurably slower for the synchronization patterns used by P5R
+        # (contended mutexes, SignalObjectAndWait, WaitForMultipleObjects) and
+        # was never used by the old fast GE-Proton 7 builds. It remains opt-in
+        # through PROTON_ENABLE_NTSYNC. PROTON_NO_NTSYNC is still honoured.
+        if "ntsync" in self.compat_config and "nontsync" not in self.compat_config:
             self.env["WINENTSYNC"] = "1"
+        else:
+            self.env.pop("WINENTSYNC", "")
 
         if "noesync" in self.compat_config:
             self.env.pop("WINEESYNC", "")

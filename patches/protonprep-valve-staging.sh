@@ -580,6 +580,12 @@ apply_all_in_dir() {
     echo "WINE: -PERF- restore Wine 7 CPU topology override handling (Persona 5 Royal)"
     apply_patch "../patches/proton/0004-ntdll-Restore-Wine-7-CPU-topology-override-handling.patch"
 
+    # Persona 5 Royal: the Wine 8+ synchronization paths are measurably slower for
+    # the APIs the game drives from its frame loop. Restore the Wine 7 semantics
+    # for yields, delays and atomic signal-and-wait.
+    echo "WINE: -PERF- restore Wine 7 yield/delay/signal-and-wait semantics (Persona 5 Royal)"
+    apply_patch "../patches/proton/0005-ntdll-Restore-Wine-7-yield-delay-and-signal-semantics.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 

@@ -666,7 +666,8 @@ Without HIDRAW access, Wine retains its normal SDL fallback, which does not prov
 | <tt>nod3d9</tt>      | <tt>PROTON_NO_D3D9</tt>        | Disables DX9.  |
 | <tt>noesync</tt>      | <tt>PROTON_NO_ESYNC</tt>       | Do not use eventfd-based in-process synchronization primitives. |
 | <tt>nofsync</tt>      | <tt>PROTON_NO_FSYNC</tt>       | Do not use futex-based in-process synchronization primitives. (Automatically disabled on systems with no `FUTEX_WAIT_MULTIPLE` support.) |
-| <tt>nontsync</tt>      | <tt>PROTON_NO_NTSYNC</tt>       | Do not use the ntsync kernel module for in-process synchronization primitives. |
+| <tt>nontsync</tt>      | <tt>PROTON_NO_NTSYNC</tt>       | Do not use the ntsync kernel module for in-process synchronization primitives. **Default in this P5R build.** |
+| <tt>ntsync</tt>        | <tt>PROTON_ENABLE_NTSYNC</tt>   | Opt back in to the ntsync kernel module. This build defaults to fsync to match the Wine 7 synchronization backend used by the old fast GE-Proton 7 builds. |
 | <tt>forcelgadd</tt>   | <tt>PROTON_FORCE_LARGE_ADDRESS_AWARE</tt> | Force Wine to enable the LARGE_ADDRESS_AWARE flag for all executables. |
 |                       | <tt>WINE_DISABLE_EXE_ASLR</tt> | Set to `1` to disable ASLR for executable images while leaving DLL relocation enabled. Use this for applications that require the main executable to remain at its preferred base address, such as some 32-bit applications that store data in otherwise unused code-pointer bits. |
 | <tt>heapdelayfree</tt>| <tt>PROTON_HEAP_DELAY_FREE</tt>| Delay freeing some memory, to work around application use-after-free bugs. |
