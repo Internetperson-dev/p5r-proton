@@ -97,6 +97,10 @@ jobs:
             proton
           grep -q 'PROTON_ENABLE_NTSYNC' \
             proton
+          grep -q 'self.env\["PROTON_NO_NTSYNC"\] = "1"' \
+            proton
+          grep -q 'self.env\["PROTON_NO_NTSYNC"\] = ""' \
+            proton
 
       - name: Configure
         working-directory: build

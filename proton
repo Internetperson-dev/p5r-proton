@@ -2405,11 +2405,16 @@ class Session:
         # is measurably slower for the synchronization patterns used by P5R
         # (contended mutexes, SignalObjectAndWait, WaitForMultipleObjects) and
         # was never used by the old fast GE-Proton 7 builds. It remains opt-in
-        # through PROTON_ENABLE_NTSYNC. PROTON_NO_NTSYNC is still honoured.
-        if "ntsync" in self.compat_config and "nontsync" not in self.compat_config:
+        # through PROTON_ENABLE_NTSYNC; PROTON_NO_NTSYNC still disables it.
+        if "ntsync" in self.compat_config:
+            # Explicit opt-in to the ntsync backend.
+            self.env["PROTON_NO_NTSYNC"] = ""
             self.env["WINENTSYNC"] = "1"
         else:
-            self.env.pop("WINENTSYNC", "")
+            # Default: fsync (the Wine 7 behaviour that the fast GE-Proton 7
+            # builds used).
+            self.env["PROTON_NO_NTSYNC"] = "1"
+            self.env["WINENTSYNC"] = ""
 
         if "noesync" in self.compat_config:
             self.env.pop("WINEESYNC", "")
