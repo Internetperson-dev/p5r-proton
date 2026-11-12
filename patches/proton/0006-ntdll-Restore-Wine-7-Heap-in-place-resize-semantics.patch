@@ -1,0 +1,33 @@
+From: p5r-proton
+Subject: ntdll: allow in-place heap resize for LFH blocks
+
+Persona 5 Royal is CPU bound on the GE-Proton11-12 base (Wine 11) even though the
+GPU is mostly idle, and still short of the ~100 FPS title screen baseline of the
+old GE-Proton 7 build (Wine 7 / fsync).
+
+Wine 10+ introduced the Low Fragmentation Heap frontend, whose
+heap_resize_block_lfh refuses any reallocation that changes the block size and
+falls back to allocate + memcpy + free. Wine 7 resized in place within the block,
+which made HeapReAlloc cheap for the small-object patterns P5R uses.
+
+Backport the Wine 7 in-place resize semantics: refuse only when the new size does
+not fit into the existing block, instead of refusing every resize that changes the
+rounded block size.
+
+---
+--- a/dlls/ntdll/heap.c	2026-11-04 00:21:57.341339097 +0000
++++ b/dlls/ntdll/heap.c	2026-11-12 22:16:30.227291652 +0000
+@@ -2193,9 +2193,10 @@
+ 
+ static NTSTATUS heap_resize_block_lfh( struct block *block, ULONG flags, SIZE_T block_size, SIZE_T size, SIZE_T *old_size, void **ret )
+ {
+-    /* as native LFH does it with different block size: refuse to resize even though we could */
+-    if (ROUND_SIZE( *old_size, BLOCK_ALIGN - 1) != ROUND_SIZE( size, BLOCK_ALIGN - 1)) return STATUS_NO_MEMORY;
+-    if (size >= *old_size) return STATUS_NO_MEMORY;
++    /* Wine 7 resized in place within the block; newer LFH refuses unless the
++       block size is unchanged. Backport the Wine 7 behaviour so HeapReAlloc on
++       small objects does not bounce through a fresh allocation. */
++    if (size > (SIZE_T)( block_get_size( block ) - block_get_overhead( block ) )) return STATUS_NO_MEMORY;
+ 
+     block_size = BLOCK_BIN_SIZE( BLOCK_SIZE_BIN( block_size ) );
+     block_set_flags( block, BLOCK_FLAG_USER_MASK & ~BLOCK_FLAG_USER_INFO, BLOCK_USER_FLAGS( flags ) );

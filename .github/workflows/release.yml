@@ -102,6 +102,15 @@ jobs:
           grep -q 'self.env\["PROTON_NO_NTSYNC"\] = ""' \
             proton
 
+      - name: Verify Wine 7 heap in-place resize
+        run: |
+          # The HeapReAlloc backport is part of the remaining Persona 5 Royal
+          # CPU regression; never let a rebase or patch drop it.
+          grep -q 'Wine 7 resized in place within the block' \
+            wine/dlls/ntdll/heap.c
+          ! grep -q 'as native LFH does it with different block size' \
+            wine/dlls/ntdll/heap.c
+
       - name: Configure
         working-directory: build
         run: |
