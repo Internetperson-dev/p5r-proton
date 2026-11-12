@@ -1,0 +1,54 @@
+From: p5r-proton
+Subject: ntdll: restore Wine 7 Low Fragmentation Heap behaviour (no LFH)
+
+Persona 5 Royal is CPU bound on the GE-Proton11-12 base (Wine 11) even though the
+GPU is mostly idle, and still short of the ~100 FPS title screen baseline of the
+old GE-Proton 7 build (Wine 7 / fsync).
+
+Wine 10+ introduced the Low Fragmentation Heap frontend and enabled it
+automatically once the per-bin allocation counters crossed the configured
+thresholds (bin_try_enable flips the heap compatibility information to HEAP_LFH).
+Wine 7 had no LFH frontend at all, so every allocation/free went through the
+standard growable subheap free lists.
+
+Backport the Wine 7 behaviour by making the LFH frontend opt-in only; the default
+heap stays on the standard implementation.
+
+---
+--- a/dlls/ntdll/heap.c	2026-11-04 00:21:57.341339097 +0000
++++ b/dlls/ntdll/heap.c	2026-11-12 22:24:14.362354806 +0000
+@@ -1993,31 +1993,9 @@
+ 
+ static void bin_try_enable( struct heap *heap, struct bin *bin )
+ {
+-    ULONG alloc = ReadNoFence( &bin->count_alloc ), freed = ReadNoFence( &bin->count_freed );
+-    SIZE_T block_size = BLOCK_BIN_SIZE( bin - heap->bins );
+-    BOOL enable = FALSE;
+-
+-    if (bin == heap->bins && alloc > 0x10) enable = TRUE;
+-    else if (bin - heap->bins < 0x30 && alloc > 0x800) enable = TRUE;
+-    else if (bin - heap->bins < 0x30 && alloc - freed > 0x10) enable = TRUE;
+-    else if (alloc - freed > 0x400000 / block_size) enable = TRUE;
+-    if (!enable) return;
+-
+-    if (ReadNoFence( &heap->compat_info ) != HEAP_LFH)
+-    {
+-        ULONG info = HEAP_LFH;
+-        RtlSetHeapInformation( heap, HeapCompatibilityInformation, &info, sizeof(info) );
+-    }
+-
+-    /* paired with ReadAcquire in heap_allocate_block_lfh.
+-     *
+-     * The acq/rel barrier on the enabled flag is protecting compat_info
+-     * (i.e. compat_info := LFH happens-before enabled := TRUE), so that
+-     * a caller that observes LFH block allocation (alloc request
+-     * succeeds without heap lock) will never observe HEAP_STD when it
+-     * queries the heap.
+-     */
+-    WriteRelease( &bin->enabled, TRUE );
++    /* Wine 7 had no Low Fragmentation Heap: keep the standard heap for every
++       block size instead of enabling the LFH frontend. */
++    return;
+ }
+ 
+ static void heap_thread_detach_bin_groups( struct heap *heap )

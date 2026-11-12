@@ -111,6 +111,13 @@ jobs:
           ! grep -q 'as native LFH does it with different block size' \
             wine/dlls/ntdll/heap.c
 
+      - name: Verify Wine 7 no-LFH heap
+        run: |
+          grep -q 'Wine 7 had no Low Fragmentation Heap' \
+            wine/dlls/ntdll/heap.c
+          ! grep -q 'ULONG alloc = ReadNoFence' \
+            wine/dlls/ntdll/heap.c
+
       - name: Configure
         working-directory: build
         run: |
