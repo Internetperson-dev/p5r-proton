@@ -597,6 +597,11 @@ apply_all_in_dir() {
     echo "WINE: -PERF- restore Wine 7 no-LFH heap behaviour (Persona 5 Royal)"
     apply_patch "../patches/proton/0007-ntdll-Restore-Wine-7-Heap-no-Low-Fragmentation-Heap-frontend.patch"
 
+    # Persona 5 Royal: Proton 7 never used the non-monotonic CLOCK_MONOTONIC_RAW
+    # clock for the Win32 monotonic clock; the newer Wine base picked the raw clock.
+    echo "WINE: -PERF- never use CLOCK_MONOTONIC_RAW (Persona 5 Royal)"
+    apply_patch "../patches/proton/0008-ntdll-server-Never-use-CLOCK_MONOTONIC_RAW.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 

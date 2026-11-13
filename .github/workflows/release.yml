@@ -118,6 +118,16 @@ jobs:
           ! grep -q 'ULONG alloc = ReadNoFence' \
             wine/dlls/ntdll/heap.c
 
+      - name: Verify Wine 7 never uses CLOCK_MONOTONIC_RAW
+        run: |
+          # Proton 7 never queried the non-monotonic CLOCK_MONOTONIC_RAW for the
+          # Win32 monotonic clock; the newer Wine base picked the raw clock again.
+          # Never let that slip back in.
+          ! grep -q '#ifdef CLOCK_MONOTONIC_RAW' \
+            wine/dlls/ntdll/unix/sync.c
+          ! grep -q '#ifdef CLOCK_MONOTONIC_RAW' \
+            wine/server/request.c
+
       - name: Configure
         working-directory: build
         run: |

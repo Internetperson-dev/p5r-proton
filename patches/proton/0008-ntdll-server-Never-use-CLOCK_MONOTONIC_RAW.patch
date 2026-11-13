@@ -1,0 +1,48 @@
+From: p5r-proton
+Subject: ntdll,server: never use CLOCK_MONOTONIC_RAW
+
+Persona 5 Royal is CPU bound on the GE-Proton11-12 base (Wine 11) even though the
+GPU is mostly idle, and still short of the ~100 FPS title screen baseline of the
+old GE-Proton 7 build (Wine 7 / fsync).
+
+Proton 7 (the fast baseline this fork is chasing) disabled the non-monotonic
+CLOCK_MONOTONIC_RAW clock for the Win32 monotonic clock queries issued by ntdll and
+the wineserver, falling back to CLOCK_MONOTONIC. The newer Wine bases pick the raw
+clock again, which adds a clock_gettime call on the timing hot paths that the game
+and its render loop depend on.
+
+Backport the Proton 7 behaviour: never query CLOCK_MONOTONIC_RAW, always use
+CLOCK_MONOTONIC for the Win32 monotonic clock.
+
+---
+diff --git a/dlls/ntdll/unix/sync.c b/dlls/ntdll/unix/sync.c
+--- a/dlls/ntdll/unix/sync.c
++++ b/dlls/ntdll/unix/sync.c
+@@ -99,7 +99,7 @@ static inline ULONGLONG monotonic_counter(void)
+ #elif defined(HAVE_CLOCK_GETTIME)
+     struct timespec ts;
+-#ifdef CLOCK_MONOTONIC_RAW
++#if 0
+     if (!clock_gettime( CLOCK_MONOTONIC_RAW, &ts ))
+         return ts.tv_sec * (ULONGLONG)TICKSPERSEC + ts.tv_nsec / 100;
+ #endif
+     if (!clock_gettime( CLOCK_MONOTONIC, &ts ))
+         return ts.tv_sec * (ULONGLONG)TICKSPERSEC + ts.tv_nsec / 100;
+ #endif
+     gettimeofday( &now, 0 );
+diff --git a/server/request.c b/server/request.c
+--- a/server/request.c
++++ b/server/request.c
+@@ -516,7 +516,7 @@ timeout_t monotonic_counter(void)
+ #elif defined(HAVE_CLOCK_GETTIME)
+     struct timespec ts;
+-#ifdef CLOCK_MONOTONIC_RAW
++#if 0
+     if (!clock_gettime( CLOCK_MONOTONIC_RAW, &ts ))
+         return (timeout_t)ts.tv_sec * TICKS_PER_SEC + ts.tv_nsec / 100;
+ #endif
+     if (!clock_gettime( CLOCK_MONOTONIC, &ts ))
+         return (timeout_t)ts.tv_sec * TICKS_PER_SEC + ts.tv_nsec / 100;
+ #endif
+     return current_time - server_start_time;
+
