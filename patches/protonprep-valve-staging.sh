@@ -592,6 +592,11 @@ apply_all_in_dir() {
     echo "WINE: -PERF- restore Wine 7 heap in-place resize semantics (Persona 5 Royal)"
     apply_patch "../patches/proton/0006-ntdll-Restore-Wine-7-Heap-in-place-resize-semantics.patch"
 
+    # Persona 5 Royal: Wine 10+ auto-enables the Low Fragmentation Heap frontend;
+    # Wine 7 had no LFH at all. Keep the standard heap for every block size.
+    echo "WINE: -PERF- restore Wine 7 no-LFH heap behaviour (Persona 5 Royal)"
+    apply_patch "../patches/proton/0007-ntdll-Restore-Wine-7-Heap-no-Low-Fragmentation-Heap-frontend.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 
