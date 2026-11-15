@@ -113,9 +113,13 @@ jobs:
 
       - name: Verify Wine 7 no-LFH heap
         run: |
+          # The HeapReAlloc backport is part of the remaining Persona 5 Royal
+          # CPU regression; never let a rebase or patch drop it.
           grep -q 'Wine 7 had no Low Fragmentation Heap' \
             wine/dlls/ntdll/heap.c
-          ! grep -q 'ULONG alloc = ReadNoFence' \
+          ! grep -q 'WriteRelease( &bin->enabled, TRUE )' \
+            wine/dlls/ntdll/heap.c
+          ! grep -q 'RtlSetHeapInformation( heap, HeapCompatibilityInformation' \
             wine/dlls/ntdll/heap.c
 
       - name: Verify Wine 7 never uses CLOCK_MONOTONIC_RAW
