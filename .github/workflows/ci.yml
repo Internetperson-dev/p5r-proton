@@ -79,7 +79,10 @@ jobs:
           mkdir -p include lib
           cp build/native/include/*.h include/
           cp runtimes/linux-x64/native/libonnxruntime.so lib/
-          chmod +x lib/libonnxruntime.so
+          # The library's SONAME is libonnxruntime.so.1.14.1, so the linker
+          # needs a file with that name as well.
+          cp lib/libonnxruntime.so lib/libonnxruntime.so.1.14.1
+          chmod +x lib/libonnxruntime.so lib/libonnxruntime.so.1.14.1
           echo "ONNXRUNTIME_DIR=$GITHUB_WORKSPACE/onnxruntime" >> "$GITHUB_ENV"
 
       - name: Verify Wine 7 CPU patch
