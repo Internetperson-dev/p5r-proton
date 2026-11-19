@@ -42,6 +42,11 @@ jobs:
           fetch-tags: true
           submodules: false
 
+      - name: Mark workspace as safe
+        # The runner mounts the workspace with a different owner than the SDK
+        # image's user, so git refuses to touch it until it is marked safe.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Checkout submodules
         run: git submodule update --init --recursive --filter=tree:0
 
