@@ -1,2 +1,0 @@
-# Local act defaults: always use the self-contained build workflow.
--W .github/workflows/release.yml

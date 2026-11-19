@@ -463,27 +463,27 @@ make redist &> log
 
 The build will be placed within the build directory as SOME-BUILD-NAME-HERE.tar.gz.
 
-### Building locally with `act`
+### Building with GitHub CI
 
-The repository ships a single self-contained workflow, `.github/workflows/release.yml`,
-that runs the whole build inside the official Proton SDK image. No Docker socket or
-Docker-in-Docker setup is required. `.actrc` already points `act` at that workflow, so:
+Every push and pull request runs `.github/workflows/ci.yml` in GitHub
+Actions. The build happens in the official Proton SDK image on the runner, so
+there is no local Docker or `act` setup to maintain. Once the run finishes,
+download the tarball and checksums from the **Artifacts** section of that run.
 
-```sh
-act -j build
-```
+Pushing a `GE-Proton*` tag runs the same build and additionally publishes the
+tarball and checksums on a GitHub release.
 
-To collect the generated tarball and checksums through act's artifact server:
-
-```sh
-act -j build --artifact-server-path /tmp/act-artifacts
-```
-
-To reproduce the same native build outside act, run the build inside the SDK image:
+To reproduce the same build locally, start a shell in the SDK image:
 
 ```sh
 docker run --rm -it -v "$PWD:$PWD" -w "$PWD" \
-  registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:4.0.20260714.251823-0
+  registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:4.0.20260714.251823-0 \
+  /bin/bash
+```
+
+Then, inside that container:
+
+```sh
 ./patches/protonprep-valve-staging.sh
 mkdir -p build && cd build
 ../configure.sh --build-name="$(cat ../VERSION)" --no-proton-sdk

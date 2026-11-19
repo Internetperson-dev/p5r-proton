@@ -1,32 +1,22 @@
-name: Build Proton
+name: CI
 
-# This is intentionally a single, self-contained workflow so that it can be
-# reproduced locally with `act`. Point act at this file explicitly:
-#
-#   act -W .github/workflows/release.yml -j build
-#
-# Add --artifact-server-path if you want act to collect the build artifacts:
-#
-#   act -W .github/workflows/release.yml -j build \
-#       --artifact-server-path /tmp/act-artifacts
-#
-# The repository's .actrc already sets -W to this workflow.
-#
-# The build runs inside the official Proton SDK image instead of starting a
-# Docker container from inside the job, so no Docker socket or
-# Docker-in-Docker setup is required.
+# Every push and pull request is built here in GitHub Actions, so changes are
+# checked on the remote runner instead of with a local `act` invocation. The
+# job runs inside the official Proton SDK image; no Docker socket or
+# Docker-in-Docker setup is required. Pushing a GE-Proton* tag additionally
+# publishes the build as a GitHub release.
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
-      - p5r-ge11-12
+      - '**'
     tags:
       - 'GE-Proton*'
+  pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,7 +36,7 @@ jobs:
       name: ${{ steps.build_name.outputs.name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -143,19 +133,8 @@ jobs:
         working-directory: build
         run: make -j"$(nproc)" redist
 
-      - name: Install Node.js for act
-        if: ${{ env.ACT }}
-        run: |
-          # act runs JavaScript actions (upload-artifact) inside this container,
-          # but the SDK image does not ship Node.js. GitHub-hosted runners
-          # inject it; act does not.
-          if ! command -v node >/dev/null 2>&1; then
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
-          fi
-
       - name: Upload tarball
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.build_name.outputs.name }}
           path: |
@@ -169,9 +148,11 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ needs.build.outputs.name }}
           path: artifacts
