@@ -32,6 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:4.0.20260714.251823-0
+      # Docker 29's built-in seccomp profile denies the AF_UNIX socket() that
+      # wineserver makes while generating default_pfx ("socket: Function not
+      # implemented"). The other Proton build steps need no privileges, and a
+      # full build takes hours, so make the socket work for the whole job.
+      options: --security-opt seccomp=unconfined
     outputs:
       name: ${{ steps.build_name.outputs.name }}
     steps:
@@ -46,6 +51,23 @@ jobs:
         # The runner mounts the workspace with a different owner than the SDK
         # image's user, so git refuses to touch it until it is marked safe.
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Prepare Wine runtime
+        # The SDK image has no systemd, so /etc/machine-id is missing and
+        # wineserver's init_user_sid() warns while creating the prefix. Give
+        # it a stable ID, then prove sockets work before the multi-hour build.
+        run: |
+          set -eu
+          if [ ! -s /etc/machine-id ]; then
+            printf '%s\n' 3f9a2b7c1d4e5f60829a3b4c5d6e7f80 > /etc/machine-id
+          fi
+          seccomp=$(awk '/^Seccomp:/ {print $2}' /proc/self/status)
+          if [ "$seccomp" != "0" ]; then
+            echo "seccomp is still active ($seccomp); wineserver sockets would fail" >&2
+            exit 1
+          fi
+          python3 -c 'import socket; socket.socket(socket.AF_UNIX, socket.SOCK_STREAM).close()'
+          echo "wineserver sockets are available"
 
       - name: Checkout submodules
         run: git submodule update --init --recursive --filter=tree:0
