@@ -490,6 +490,11 @@ mkdir -p build && cd build
 make -j"$(nproc)" redist
 ```
 
+Piper needs ONNX Runtime 1.14.1 headers and `libonnxruntime.so`, but its
+upstream GitHub release no longer exists. CI supplies them automatically from
+the NuGet package; for a local build, extract that package and export
+`ONNXRUNTIME_DIR` before running `configure.sh` (see `.github/workflows/ci.yml`).
+
 ## Enabling
 
 1. Right click any game in Steam and click `Properties`.

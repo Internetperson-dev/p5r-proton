@@ -61,7 +61,26 @@ jobs:
           ./patches/protonprep-valve-staging.sh || true
           # Strip binaries at compile time to save space.
           patch -Np1 -i .github/patches/0001-build-strip-binaries-early.patch
+          # Allow piper to use a supplied onnxruntime (upstream releases vanished).
+          patch -p1 -d piper -i "$GITHUB_WORKSPACE/.github/patches/0002-piper-supply-onnxruntime.patch"
           mkdir -p build
+
+      - name: Provide onnxruntime for piper
+        run: |
+          # piper-phonemize downloads onnxruntime 1.14.1 from a GitHub release
+          # that no longer exists. Build the same headers/library from the
+          # NuGet package and point the patched piper build at them.
+          set -eu
+          wget -q -O /tmp/onnxruntime.nupkg \
+            https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.14.1/microsoft.ml.onnxruntime.1.14.1.nupkg
+          mkdir -p "$GITHUB_WORKSPACE/onnxruntime"
+          cd "$GITHUB_WORKSPACE/onnxruntime"
+          cmake -E tar xf /tmp/onnxruntime.nupkg
+          mkdir -p include lib
+          cp build/native/include/*.h include/
+          cp runtimes/linux-x64/native/libonnxruntime.so lib/
+          chmod +x lib/libonnxruntime.so
+          echo "ONNXRUNTIME_DIR=$GITHUB_WORKSPACE/onnxruntime" >> "$GITHUB_ENV"
 
       - name: Verify Wine 7 CPU patch
         run: |
