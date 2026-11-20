@@ -298,7 +298,8 @@ jobs:
           key: ${{ steps.cargo-restore.outputs.cache-primary-key }}
 
       - name: Save onnxruntime
-        if: always()
+        # Fixed key already exists after the first run, so only save on a miss.
+        if: always() && steps.onnxruntime-restore.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
