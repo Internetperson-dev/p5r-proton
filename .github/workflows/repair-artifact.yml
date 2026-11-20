@@ -41,9 +41,9 @@ jobs:
           BUILD_NAME: ${{ inputs.build_name }}
         run: |
           set -eu
-          stamp=$(cut -d' ' -f1 "$ARTIFACT_NAME/version")
-          printf '%s %s\n' "$stamp" "$BUILD_NAME" > "$ARTIFACT_NAME/version"
-          tar -czf "$BUILD_NAME.tar.gz" "$ARTIFACT_NAME"
+          stamp=$(cut -d' ' -f1 "original/$ARTIFACT_NAME/version")
+          printf '%s %s\n' "$stamp" "$BUILD_NAME" > "original/$ARTIFACT_NAME/version"
+          tar -czf "$BUILD_NAME.tar.gz" -C original "$ARTIFACT_NAME"
           sha512sum "$BUILD_NAME.tar.gz" > "$BUILD_NAME.sha512sum"
           sha256sum "$BUILD_NAME".* > SHA256SUMS
           cat "$ARTIFACT_NAME/version"
