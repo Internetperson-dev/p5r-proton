@@ -1,0 +1,60 @@
+name: Repair release artifact version stamp
+
+# One-off utility: re-stamps the version file of an already-built GE-Proton
+# artifact and re-uploads it, without repeating the multi-hour compile.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Run that holds the original release artifact
+        required: true
+        default: '44636185293'
+      artifact_name:
+        description: Name of the original artifact
+        required: true
+        default: 'GE-Proton11-12-P5R'
+      build_name:
+        description: Build name written into the version file
+        required: true
+        default: 'GE-Proton11-12-P5R'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  repair:
+    name: Restamp and upload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download original artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        run: gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" -n "$ARTIFACT_NAME" -D original
+
+      - name: Restamp version and rebuild tarball
+        env:
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+          BUILD_NAME: ${{ inputs.build_name }}
+        run: |
+          set -eu
+          stamp=$(cut -d' ' -f1 "$ARTIFACT_NAME/version")
+          printf '%s %s\n' "$stamp" "$BUILD_NAME" > "$ARTIFACT_NAME/version"
+          tar -czf "$BUILD_NAME.tar.gz" "$ARTIFACT_NAME"
+          sha512sum "$BUILD_NAME.tar.gz" > "$BUILD_NAME.sha512sum"
+          sha256sum "$BUILD_NAME".* > SHA256SUMS
+          cat "$ARTIFACT_NAME/version"
+          sha256sum -c SHA256SUMS
+
+      - name: Upload repaired artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.build_name }}-version-fixed
+          path: |
+            ${{ inputs.build_name }}.tar.gz
+            ${{ inputs.build_name }}.sha512sum
+            SHA256SUMS
+          if-no-files-found: error
