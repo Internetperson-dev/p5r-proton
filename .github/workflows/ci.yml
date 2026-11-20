@@ -257,6 +257,23 @@ jobs:
         working-directory: build
         run: make -j"$(nproc)" redist
 
+      - name: Fix version stamp
+        # git describe --tags returns nothing on this fork (no reachable tags),
+        # so the Makefile writes "<timestamp> " instead of "<timestamp> NAME".
+        # Restore the build name in the tarball and regenerate its checksums.
+        working-directory: build
+        run: |
+          set -eu
+          name="${{ steps.build_name.outputs.name }}"
+          tar -xzf "$name.tar.gz"
+          stamp=$(awk '{print $1}' "$name/version")
+          printf '%s %s\n' "$stamp" "$name" > "$name/version"
+          rm -f "$name.tar.gz" "$name.sha512sum" SHA256SUMS
+          tar -czf "$name.tar.gz" "$name"
+          sha512sum "$name.tar.gz" > "$name.sha512sum"
+          sha256sum "$name.tar.gz" "$name.sha512sum" > SHA256SUMS
+          echo "version stamp: $(cat "$name/version")"
+
       - name: Report ccache stats
         if: always()
         run: ccache -s || true
