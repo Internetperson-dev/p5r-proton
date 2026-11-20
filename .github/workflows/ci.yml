@@ -44,6 +44,13 @@ jobs:
       # the build runs inside a container with HOME=/github/home.
       CCACHE_DIR: /github/home/.ccache
       CARGO_HOME: /github/home/.cargo
+      # Match proton-cachyos-native's build environment. configure.sh turns
+      # CFLAGS/RUSTFLAGS/LDFLAGS into the generated Makefile's HOST_* values;
+      # CXXFLAGS still reaches the C++ subprojects directly.
+      CFLAGS: -O3 -march=nocona -mtune=core-avx2
+      CXXFLAGS: -O3 -march=nocona -mtune=core-avx2
+      RUSTFLAGS: -Copt-level=3 -Ctarget-cpu=nocona
+      LDFLAGS: -Wl,-O1,--sort-common,--as-needed
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -150,6 +157,7 @@ jobs:
           grep -q '^HOST_RUSTFLAGS ?= -Copt-level=3 -Ctarget-cpu=nocona' Makefile.in
           grep -q '^LDFLAGS ?= -Wl,-O1,--sort-common,--as-needed' Makefile.in
           grep -q 'HOST_CFLAGS := ${CFLAGS:--O3 -march=nocona -mtune=core-avx2}' configure.sh
+          grep -q '^      CXXFLAGS: -O3 -march=nocona -mtune=core-avx2' .github/workflows/ci.yml
           grep -q 'CFLAGS += -s' Makefile.in
 
       - name: Restore onnxruntime
