@@ -602,6 +602,12 @@ apply_all_in_dir() {
     echo "WINE: -PERF- never use CLOCK_MONOTONIC_RAW (Persona 5 Royal)"
     apply_patch "../patches/proton/0008-ntdll-server-Never-use-CLOCK_MONOTONIC_RAW.patch"
 
+    # P5R's Steamworks network worker polls the IPv6 forwarding table. Wine 7
+    # returned it immediately; newer Wine reparses /proc/net/ipv6_route on every
+    # call and burns a core on the title screen.
+    echo "WINE: -PERF- restore Wine 7 IPv6 forwarding table fast path (Persona 5 Royal)"
+    apply_patch "../patches/proton/0009-nsiproxy-Restore-Wine-7-IPv6-forwarding-table-behavior.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 

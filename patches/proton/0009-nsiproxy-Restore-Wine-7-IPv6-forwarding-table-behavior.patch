@@ -1,0 +1,29 @@
+From: p5r-proton
+Subject: nsiproxy: restore Wine 7 IPv6 forwarding table behaviour
+
+Proton 7 (Wine 7) returned an empty IPv6 forwarding table immediately from
+ipv6_forward_enumerate_all().  Newer Wine bases parse the whole of
+/proc/net/ipv6_route on every call, including calls that only ask for the
+entry count.
+
+Persona 5 Royal's Steamworks network worker polls that table continuously.
+With the modern implementation it re-reads and re-parses the host routing
+table hundreds of times per second, which keeps a CPU core busy and caps the
+title screen near 30 FPS.  Restore the Wine 7 fast path so the polling is
+cheap again, matching the fast Proton 7 baseline.
+
+--- a/dlls/nsiproxy.sys/ip.c
++++ b/dlls/nsiproxy.sys/ip.c
+@@ -1791,6 +1791,12 @@ static NTSTATUS ipv6_forward_enumerate_all( void *key_data, UINT key_size, void *
+     TRACE( "%p %d %p %d %p %d %p %d %p\n" , key_data, key_size, rw_data, rw_size,
+         dynamic_data, dynamic_size, static_data, static_size, count );
+ 
++    /* Wine 7 returned an empty IPv6 forwarding table without parsing host
++     * routes.  P5R polls this table from a network worker thread, so do the
++     * same here instead of re-reading /proc/net/ipv6_route on every call. */
++    *count = 0;
++    return STATUS_SUCCESS;
++
+ #ifdef __linux__
+     {
+         struct ipv6_route_data entry;
