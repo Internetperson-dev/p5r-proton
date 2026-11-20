@@ -274,6 +274,26 @@ jobs:
           sha256sum "$name.tar.gz" "$name.sha512sum" > SHA256SUMS
           echo "version stamp: $(cat "$name/version")"
 
+      - name: Verify artifact
+        # Fail the job instead of shipping a mis-stamped tarball. The fork has
+        # no reachable release tag, so a future Makefile/cache change could
+        # silently drop the build name again; that must never reach Steam.
+        working-directory: build
+        run: |
+          set -eu
+          name="${{ steps.build_name.outputs.name }}"
+          tar -xzf "$name.tar.gz" "$name/version"
+          actual=$(cat "$name/version")
+          printf 'artifact version: %s\n' "$actual"
+          if ! printf '%s\n' "$actual" | grep -Eq "^[[:digit:]]+ ${name}$"; then
+            echo "expected '<timestamp> ${name}', got '$actual'" >&2
+            exit 1
+          fi
+          test -s "$name.sha512sum"
+          test -s SHA256SUMS
+          sha512sum -c "$name.sha512sum"
+          sha256sum -c SHA256SUMS
+
       - name: Report ccache stats
         if: always()
         run: ccache -s || true
