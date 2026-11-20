@@ -608,6 +608,13 @@ apply_all_in_dir() {
     echo "WINE: -PERF- restore Wine 7 IPv6 forwarding table fast path (Persona 5 Royal)"
     apply_patch "../patches/proton/0009-nsiproxy-Restore-Wine-7-IPv6-forwarding-table-behavior.patch"
 
+    # GE-Proton7 carried Wine-Staging's inline RtlEnterCriticalSection /
+    # RtlLeaveCriticalSection helpers and used them for heap and threadpool
+    # locks. Modern Proton calls the full exported functions on those hot
+    # paths. Restore the small zero-contention fast path inline.
+    echo "WINE: -PERF- restore Wine 7 inline critical section fast paths (Persona 5 Royal)"
+    apply_patch "../patches/proton/0010-ntdll-Restore-Wine-7-inline-critical-section-fast-paths.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 
