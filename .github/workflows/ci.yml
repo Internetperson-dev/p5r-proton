@@ -39,6 +39,11 @@ jobs:
       options: --security-opt seccomp=unconfined
     outputs:
       name: ${{ steps.build_name.outputs.name }}
+    env:
+      # Explicit paths so ccache/cargo and the cache actions agree even though
+      # the build runs inside a container with HOME=/github/home.
+      CCACHE_DIR: /github/home/.ccache
+      CARGO_HOME: /github/home/.cargo
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -69,6 +74,55 @@ jobs:
           python3 -c 'import socket; socket.socket(socket.AF_UNIX, socket.SOCK_STREAM).close()'
           echo "wineserver sockets are available"
 
+      # Restore the compiler cache first. Proton enables ccache by default, so
+      # with a warm cache a patch-only change recompiles only the objects whose
+      # preprocessed source actually changed instead of the entire ~2h build.
+      - name: Restore ccache
+        id: ccache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: /github/home/.ccache
+          key: ccache-proton-${{ github.run_id }}
+          restore-keys: |
+            ccache-proton-
+
+      # piper is a Rust crate; keep the downloaded crates so a rebuild does not
+      # hit crates.io again.
+      - name: Restore cargo registry
+        id: cargo-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: /github/home/.cargo
+          key: cargo-proton-${{ github.run_id }}
+          restore-keys: |
+            cargo-proton-
+
+      - name: Restore submodule git objects
+        id: submodules-restore
+        uses: actions/cache/restore@v4
+        with:
+          # git submodule update fetches ~20 submodules (~3 minutes cold).
+          # Keeping .git/modules lets it check out from local objects instead.
+          path: .git/modules
+          key: submodules-proton-${{ github.run_id }}
+          restore-keys: |
+            submodules-proton-
+
+      - name: Configure build caches
+        run: |
+          set -eu
+          mkdir -p "$CCACHE_DIR" "$CARGO_HOME"
+          if command -v ccache >/dev/null 2>&1; then
+            # Keep each cache well under the repository's 10 GB cache quota;
+            # GitHub evicts the oldest ccache-proton-* entry automatically.
+            ccache -M 4G
+            ccache -z
+            echo "ccache configuration:"
+            ccache -p | head -20
+          else
+            echo "ccache not available; the build will proceed without it"
+          fi
+
       - name: Checkout submodules
         run: git submodule update --init --recursive --filter=tree:0
 
@@ -87,24 +141,36 @@ jobs:
           patch -p1 -d piper -i "$GITHUB_WORKSPACE/.github/patches/0002-piper-supply-onnxruntime.patch"
           mkdir -p build
 
+      - name: Restore onnxruntime
+        id: onnxruntime-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: onnxruntime
+          key: onnxruntime-1.14.1
+
       - name: Provide onnxruntime for piper
         run: |
           # piper-phonemize downloads onnxruntime 1.14.1 from a GitHub release
           # that no longer exists. Build the same headers/library from the
-          # NuGet package and point the patched piper build at them.
+          # NuGet package and point the patched piper build at them. The
+          # extracted tree is immutable, so it is cached across runs.
           set -eu
-          wget -q -O /tmp/onnxruntime.nupkg \
-            https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.14.1/microsoft.ml.onnxruntime.1.14.1.nupkg
-          mkdir -p "$GITHUB_WORKSPACE/onnxruntime"
-          cd "$GITHUB_WORKSPACE/onnxruntime"
-          cmake -E tar xf /tmp/onnxruntime.nupkg
-          mkdir -p include lib
-          cp build/native/include/*.h include/
-          cp runtimes/linux-x64/native/libonnxruntime.so lib/
-          # The library's SONAME is libonnxruntime.so.1.14.1, so the linker
-          # needs a file with that name as well.
-          cp lib/libonnxruntime.so lib/libonnxruntime.so.1.14.1
-          chmod +x lib/libonnxruntime.so lib/libonnxruntime.so.1.14.1
+          if [ -f "$GITHUB_WORKSPACE/onnxruntime/lib/libonnxruntime.so.1.14.1" ]; then
+            echo "Using cached onnxruntime 1.14.1"
+          else
+            wget -q -O /tmp/onnxruntime.nupkg \
+              https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.14.1/microsoft.ml.onnxruntime.1.14.1.nupkg
+            mkdir -p "$GITHUB_WORKSPACE/onnxruntime"
+            cd "$GITHUB_WORKSPACE/onnxruntime"
+            cmake -E tar xf /tmp/onnxruntime.nupkg
+            mkdir -p include lib
+            cp build/native/include/*.h include/
+            cp runtimes/linux-x64/native/libonnxruntime.so lib/
+            # The library's SONAME is libonnxruntime.so.1.14.1, so the linker
+            # needs a file with that name as well.
+            cp lib/libonnxruntime.so lib/libonnxruntime.so.1.14.1
+            chmod +x lib/libonnxruntime.so lib/libonnxruntime.so.1.14.1
+          fi
           echo "ONNXRUNTIME_DIR=$GITHUB_WORKSPACE/onnxruntime" >> "$GITHUB_ENV"
 
       - name: Verify Wine 7 CPU patch
@@ -190,6 +256,45 @@ jobs:
       - name: Build
         working-directory: build
         run: make -j"$(nproc)" redist
+
+      - name: Report ccache stats
+        if: always()
+        run: ccache -s || true
+
+      # Save with `always()` so a failed or cancelled build still contributes
+      # its successfully compiled objects to the next run. Each run gets a
+      # unique key so save never conflicts with an existing cache entry.
+      - name: Save ccache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: /github/home/.ccache
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+
+      - name: Save cargo registry
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: /github/home/.cargo
+          key: ${{ steps.cargo-restore.outputs.cache-primary-key }}
+
+      - name: Save onnxruntime
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: onnxruntime
+          key: ${{ steps.onnxruntime-restore.outputs.cache-primary-key }}
+
+      - name: Save submodule git objects
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .git/modules
+          key: ${{ steps.submodules-restore.outputs.cache-primary-key }}
 
       - name: Upload tarball
         uses: actions/upload-artifact@v7
