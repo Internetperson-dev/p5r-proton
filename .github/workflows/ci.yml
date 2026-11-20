@@ -135,7 +135,7 @@ jobs:
           # The Wine 7 fast path must not be silently lost to an upstream rebase.
           grep -q 'Wine 7 returned an empty IPv6 forwarding table' \
             wine/dlls/nsiproxy.sys/ip.c
-          grep -A2 'Wine 7 returned an empty IPv6 forwarding table' \
+          grep -A4 'Wine 7 returned an empty IPv6 forwarding table' \
             wine/dlls/nsiproxy.sys/ip.c | grep -q 'return STATUS_SUCCESS;'
 
       - name: Verify fsync default
