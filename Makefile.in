@@ -52,14 +52,25 @@ DIST_VERSION := $(DST_BASE)/version
 DEPLOY_DIR := ./deploy
 REDIST_DIR := ./redist
 
-i386_CFLAGS    := -mstackrealign -march=nocona -mtune=core-avx2 -mfpmath=sse
-x86_64_CFLAGS  := -mcmodel=small -march=nocona -mtune=core-avx2 -mfpmath=sse
-aarch64_CFLAGS := -march=armv8.2-a -mtune=cortex-x3
-arm64ec_CFLAGS := -march=armv8.2-a -mtune=cortex-x3
+# CachyOS-style host optimisation flags. HOST_CFLAGS is baked into the
+# generated Makefile by configure.sh, so CI and local builds use the same
+# tuning for the PE binaries that make up the bulk of the game's CPU path.
+HOST_CFLAGS    ?= -O3 -march=nocona -mtune=core-avx2
+CCOS_CFLAGS    := $(HOST_CFLAGS) -pipe
+i386_CFLAGS    := -mstackrealign $(CCOS_CFLAGS) -mfpmath=sse
+x86_64_CFLAGS  := -mcmodel=small $(CCOS_CFLAGS) -mfpmath=sse
+HOST_RUSTFLAGS ?= -Copt-level=3 -Ctarget-cpu=nocona
+i386_RUSTFLAGS := $(HOST_RUSTFLAGS)
+x86_64_RUSTFLAGS := $(HOST_RUSTFLAGS)
+aarch64_CFLAGS := -O2 -march=armv8.2-a -mtune=cortex-x3
+arm64ec_CFLAGS := -O2 -march=armv8.2-a -mtune=cortex-x3
+aarch64_RUSTFLAGS := -Copt-level=3 -Ctarget-cpu=armv8.2-a
+arm64ec_RUSTFLAGS := -Copt-level=3 -Ctarget-cpu=armv8.2-a
 
-CFLAGS  = -O2 -fwrapv -fno-strict-aliasing
-CFLAGS += -ggdb -ffunction-sections -fdata-sections -fno-omit-frame-pointer
+CFLAGS  = -fwrapv -fno-strict-aliasing
+CFLAGS += -ffunction-sections -fdata-sections -fno-omit-frame-pointer
 CFLAGS += -ffile-prefix-map=$(CCACHE_BASEDIR)=.
+LDFLAGS ?= -Wl,-O1,--sort-common,--as-needed
 
 ifneq ($(SUPPRESS_WARNINGS),)
 	CFLAGS += -w
@@ -113,10 +124,12 @@ ifneq ($(UNSTRIPPED_BUILD),)
     STRIP :=
     INSTALL_PROGRAM_FLAGS :=
     MESON_STRIP_ARG :=
+    CFLAGS += -ggdb
 else
     STRIP := $(TOOLCHAIN_PREFIX)strip
     INSTALL_PROGRAM_FLAGS := -s
     MESON_STRIP_ARG := --strip
+    CFLAGS += -s
 endif
 
 # all, all-dist and dist are basically synonyms

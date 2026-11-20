@@ -199,6 +199,13 @@ function configure() {
     fi
     echo "ENABLE_CCACHE := 1"
 
+    # Bake the CachyOS optimisation flags into the generated Makefile. The
+    # defaults match CachyOS's proton-cachyos-native build; an explicit
+    # CFLAGS/RUSTFLAGS/LDFLAGS in the build environment still wins.
+    echo "HOST_CFLAGS := ${CFLAGS:--O3 -march=nocona -mtune=core-avx2}"
+    echo "HOST_RUSTFLAGS := ${RUSTFLAGS:--Copt-level=3 -Ctarget-cpu=nocona}"
+    echo "LDFLAGS := ${LDFLAGS:--Wl,-O1,--sort-common,--as-needed}"
+
     # Include base
     echo ""
     echo "include \$(SRCDIR)/Makefile.in"
