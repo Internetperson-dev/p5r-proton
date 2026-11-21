@@ -255,6 +255,16 @@ jobs:
           ! grep -q 'RtlSetHeapInformation( heap, HeapCompatibilityInformation' \
             wine/dlls/ntdll/heap.c
 
+      - name: Verify Wine 7 inline critical sections
+        run: |
+          # The Wine 7 inline CS helpers must survive both the GE patch set and
+          # the Wine-Wayland hotfixes that touch threadpool.c. A partial patch
+          # application used to leave tp_object_wait on the slow exported path.
+          grep -q 'static inline void enter_critical_section' \
+            wine/dlls/ntdll/ntdll_misc.h
+          grep -A8 'static void tp_object_wait' \
+            wine/dlls/ntdll/threadpool.c | grep -q 'enter_critical_section( &pool->cs )'
+
       - name: Verify Wine 7 never uses CLOCK_MONOTONIC_RAW
         run: |
           # Proton 7 never queried the non-monotonic CLOCK_MONOTONIC_RAW for the

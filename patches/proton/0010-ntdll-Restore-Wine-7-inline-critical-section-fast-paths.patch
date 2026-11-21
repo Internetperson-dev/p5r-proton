@@ -625,7 +625,7 @@ index f7f0262a930..142d0b4c8b3 100644
  
 -    RtlEnterCriticalSection( &pool->cs );
 +    enter_critical_section( &pool->cs );
-     while (!object_is_finished( object, group_wait ))
+     while (!RtlDllShutdownInProgress() && !object_is_finished( object, group_wait ))
      {
          if (group_wait)
 @@ -2090,21 +2090,21 @@ static void tp_object_wait( struct threadpool_object *object, BOOL group_wait )
