@@ -170,7 +170,7 @@ jobs:
           ! grep -q -- '-Wno-error=alloc-size-larger-than' .github/workflows/ci.yml
           grep -q 'CFLAGS  = .* -Wno-error$' Makefile.in
           grep -q '^      CCACHE_IGNOREOPTIONS: .* -Wno-error$' .github/workflows/ci.yml
-          ! grep -q -- '--enable-werror' Makefile.in
+          ! grep -Eq '^[[:space:]]+--enable-werror([[:space:]]|$)' Makefile.in
 
       - name: Restore onnxruntime
         id: onnxruntime-restore
