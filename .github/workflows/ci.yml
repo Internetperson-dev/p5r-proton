@@ -51,9 +51,10 @@ jobs:
       CXXFLAGS: -O3 -march=nocona -mtune=core-avx2
       RUSTFLAGS: -Copt-level=3 -Ctarget-cpu=nocona
       LDFLAGS: -Wl,-O1,--sort-common,--as-needed
-      # Makefile.in's -Wno-error=* flags only downgrade GCC diagnostics; they
-      # do not change generated code. Tell ccache to leave them out of the
-      # input hash so warning-suppression fixes do not invalidate every object.
+      # Wine is built without --enable-werror. Makefile.in's -Wno-error=*
+      # flags only downgrade GCC diagnostics in other subprojects; they do not
+      # change generated code. Leave them out of the ccache input hash so
+      # warning-suppression fixes do not invalidate every object.
       CCACHE_IGNOREOPTIONS: -Wno-error=maybe-uninitialized -Wno-error=format-overflow -Wno-error=stringop-overflow -Wno-error
     steps:
       - name: Checkout
@@ -169,6 +170,7 @@ jobs:
           ! grep -q -- '-Wno-error=alloc-size-larger-than' .github/workflows/ci.yml
           grep -q 'CFLAGS  = .* -Wno-error$' Makefile.in
           grep -q '^      CCACHE_IGNOREOPTIONS: .* -Wno-error$' .github/workflows/ci.yml
+          ! grep -q -- '--enable-werror' Makefile.in
 
       - name: Restore onnxruntime
         id: onnxruntime-restore
