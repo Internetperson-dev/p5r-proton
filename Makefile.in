@@ -68,10 +68,11 @@ aarch64_RUSTFLAGS := -Copt-level=3 -Ctarget-cpu=armv8.2-a
 arm64ec_RUSTFLAGS := -Copt-level=3 -Ctarget-cpu=armv8.2-a
 
 # GCC 14 in the SteamRT SDK reports false-positive warnings when inlining at
-# -O3 (e.g. maybe-uninitialized in Wine's widl/typegen.c and format-overflow in
-# Wine's winebuild/import.c). Keep those as warnings so --enable-werror does not
-# turn the CachyOS tuning into a build failure.
-CFLAGS  = -fwrapv -fno-strict-aliasing -Wno-error=maybe-uninitialized -Wno-error=format-overflow
+# -O3 (e.g. maybe-uninitialized in Wine's widl/typegen.c, format-overflow in
+# Wine's winebuild/import.c, and stringop-overflow in Wine's crypt32/encode.c
+# and msvcrt/printf.h). Keep those as warnings so --enable-werror does not turn
+# the CachyOS tuning into a build failure.
+CFLAGS  = -fwrapv -fno-strict-aliasing -Wno-error=maybe-uninitialized -Wno-error=format-overflow -Wno-error=stringop-overflow
 CFLAGS += -ffunction-sections -fdata-sections -fno-omit-frame-pointer
 CFLAGS += -ffile-prefix-map=$(CCACHE_BASEDIR)=.
 LDFLAGS ?= -Wl,-O1,--sort-common,--as-needed

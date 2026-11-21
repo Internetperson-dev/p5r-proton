@@ -54,7 +54,7 @@ jobs:
       # Makefile.in's -Wno-error=* flags only downgrade GCC diagnostics; they
       # do not change generated code. Tell ccache to leave them out of the
       # input hash so warning-suppression fixes do not invalidate every object.
-      CCACHE_IGNOREOPTIONS: -Wno-error=maybe-uninitialized -Wno-error=format-overflow
+      CCACHE_IGNOREOPTIONS: -Wno-error=maybe-uninitialized -Wno-error=format-overflow -Wno-error=stringop-overflow
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -164,6 +164,8 @@ jobs:
           grep -q 'HOST_CFLAGS := ${CFLAGS:--O3 -march=nocona -mtune=core-avx2}' configure.sh
           grep -q '^      CXXFLAGS: -O3 -march=nocona -mtune=core-avx2' .github/workflows/ci.yml
           grep -q 'CFLAGS += -s' Makefile.in
+          grep -q -- '-Wno-error=stringop-overflow' Makefile.in
+          grep -q '^      CCACHE_IGNOREOPTIONS: .* -Wno-error=stringop-overflow' .github/workflows/ci.yml
 
       - name: Restore onnxruntime
         id: onnxruntime-restore
