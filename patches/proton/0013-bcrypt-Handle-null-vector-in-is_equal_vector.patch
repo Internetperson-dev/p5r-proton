@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] bcrypt: Handle null vectors before memcmp()
+
+GCC 14 at -O3 inlines the ECB paths where the IV is NULL and turns the
+memcmp() into a -Werror=nonnull failure. If either vector is NULL, the only
+case where the two can match is both being NULL, so handle that explicitly.
+
+diff --git a/dlls/bcrypt/bcrypt_main.c b/dlls/bcrypt/bcrypt_main.c
+index 1d70a29d1c9..9abb8adaed7 100644
+--- a/dlls/bcrypt/bcrypt_main.c
++++ b/dlls/bcrypt/bcrypt_main.c
+@@ -1177,7 +1177,7 @@ static NTSTATUS key_asymmetric_create( enum alg_id alg_id, enum ecc_curve_id cur
+
+ static BOOL is_equal_vector( const UCHAR *vector, ULONG len, const UCHAR *vector2, ULONG len2 )
+ {
+-    if (!vector && !vector2) return TRUE;
++    if (!vector || !vector2) return vector == vector2;
+     if (len != len2) return FALSE;
+     return !memcmp( vector, vector2, len );
+ }

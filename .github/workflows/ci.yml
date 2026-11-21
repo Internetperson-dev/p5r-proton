@@ -277,6 +277,13 @@ jobs:
           grep -q 'if (context && reply_size > sizeof(reply_data.call))' \
             wine/dlls/ntdll/unix/server.c
 
+      - name: Verify -O3 bcrypt vector guard
+        run: |
+          # GCC 14 at -O3 otherwise fails dlls/bcrypt/bcrypt_main.c with
+          # -Werror=nonnull when the ECB IV is NULL.
+          grep -q 'if (!vector || !vector2) return vector == vector2;' \
+            wine/dlls/bcrypt/bcrypt_main.c
+
       - name: Verify Wine 7 message pump and scheduler behavior
         run: |
           # P5R's title screen is a tight PeekMessage loop. The Wine 11 8 kHz

@@ -628,6 +628,11 @@ apply_all_in_dir() {
     echo "WINE: -PERF- restore Wine 7 message pump and scheduler behavior (Persona 5 Royal)"
     apply_patch "../patches/proton/0012-win32u-server-Restore-Wine-7-message-pump-and-scheduler-behavior.patch"
 
+    # GCC 14 at -O3 inlines the ECB paths where the IV is NULL and turns the
+    # memcmp() in is_equal_vector() into a -Werror=nonnull failure.
+    echo "WINE: handle null vectors in bcrypt is_equal_vector (-O3 build fix)"
+    apply_patch "../patches/proton/0013-bcrypt-Handle-null-vector-in-is_equal_vector.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 
