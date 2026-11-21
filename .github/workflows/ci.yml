@@ -54,7 +54,7 @@ jobs:
       # Makefile.in's -Wno-error=* flags only downgrade GCC diagnostics; they
       # do not change generated code. Tell ccache to leave them out of the
       # input hash so warning-suppression fixes do not invalidate every object.
-      CCACHE_IGNOREOPTIONS: -Wno-error=maybe-uninitialized -Wno-error=format-overflow -Wno-error=stringop-overflow -Wno-error=alloc-size-larger-than
+      CCACHE_IGNOREOPTIONS: -Wno-error=maybe-uninitialized -Wno-error=format-overflow -Wno-error=stringop-overflow -Wno-error=alloc-size-larger-than -Wno-error
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -167,6 +167,8 @@ jobs:
           grep -q -- '-Wno-error=stringop-overflow' Makefile.in
           grep -q -- '-Wno-error=alloc-size-larger-than' Makefile.in
           grep -q '^      CCACHE_IGNOREOPTIONS: .* -Wno-error=alloc-size-larger-than' .github/workflows/ci.yml
+          grep -q 'CFLAGS  = .* -Wno-error$' Makefile.in
+          grep -q '^      CCACHE_IGNOREOPTIONS: .* -Wno-error$' .github/workflows/ci.yml
 
       - name: Restore onnxruntime
         id: onnxruntime-restore
