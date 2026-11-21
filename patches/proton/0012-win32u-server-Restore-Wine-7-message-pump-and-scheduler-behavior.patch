@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] win32u/server: Restore Wine 7 message pump and scheduler behavior
+
+diff --git a/dlls/win32u/message.c b/dlls/win32u/message.c
+index d3ac05a443e..25e4312a3f2 100644
+--- a/dlls/win32u/message.c
++++ b/dlls/win32u/message.c
+@@ -3409,12 +3409,12 @@ void check_for_events( UINT flags )
+     if (!process_driver_events( flags, 0, 0 ) && !(flags & QS_PAINT)) flush_window_surfaces( TRUE );
+ }
+ 
+-/* monotonic timer tick for throttling driver event checks */
++/* Use the Wine 7 16ms user_shared_data tick. The Wine 11 8kHz QPC throttle
++ * makes PeekMessage call into the X11 driver and surfaces thousands of times
++ * per second in a tight message pump, which is a large CPU cost on P5R. */
+ static inline LONGLONG get_driver_check_time(void)
+ {
+-    LARGE_INTEGER counter, freq;
+-    NtQueryPerformanceCounter( &counter, &freq );
+-    return counter.QuadPart * 8000 / freq.QuadPart; /* 8kHz */
++    return NtGetTickCount();
+ }
+ 
+ /* check for driver events if we detect that the app is not properly consuming messages */
+@@ -3606,10 +3606,15 @@ BOOL WINAPI NtUserPeekMessage( MSG *msg_out, HWND hwnd, UINT first, UINT last, U
+     {
+         if (!ret)
+         {
++            LONGLONG now = get_driver_check_time();
+             struct thunk_lock_params params = {.dispatch.callback = thunk_lock_callback};
+             void *ret_ptr;
+             ULONG ret_len;
+ 
++            /* Wine 7 only flushed and yielded once per driver check tick. */
++            if (get_user_thread_info()->last_empty_peek_time == now) return FALSE;
++            get_user_thread_info()->last_empty_peek_time = now;
++
+             flush_window_surfaces( TRUE );
+ 
+             if (!KeUserDispatchCallback( &params.dispatch, sizeof(params), &ret_ptr, &ret_len ) &&
+@@ -3625,6 +3630,9 @@ BOOL WINAPI NtUserPeekMessage( MSG *msg_out, HWND hwnd, UINT first, UINT last, U
+     }
+ 
+     check_for_driver_events();
++    /* A delivered message allows the next empty peek to flush again, like
++     * Wine 7 setting last_driver_time to GetTickCount() - 1 here. */
++    get_user_thread_info()->last_empty_peek_time = get_driver_check_time() - 1;
+ 
+     /* copy back our internal safe copy of message data to msg_out.
+      * msg_out is a variable from the *program*, so it can't be used
+diff --git a/dlls/win32u/ntuser_private.h b/dlls/win32u/ntuser_private.h
+index 67cbe230195..9d6f55dd4bc 100644
+--- a/dlls/win32u/ntuser_private.h
++++ b/dlls/win32u/ntuser_private.h
+@@ -123,6 +123,7 @@ struct user_thread_info
+     HANDLE                        server_queue;           /* Handle to server-side queue */
+     HANDLE                        idle_event;             /* Handle to the process idle event */
+     LONGLONG                      last_driver_time;       /* Get/PeekMessage driver event time */
++    LONGLONG                      last_empty_peek_time;   /* empty PeekMessage driver event time */
+     WORD                          hook_call_depth;        /* Number of recursively called hook procs */
+     WORD                          hook_unicode;           /* Is current hook unicode? */
+     HHOOK                         hook;                   /* Current hook */
+diff --git a/server/thread.c b/server/thread.c
+index 47e31f65b5c..985d35eb8fa 100644
+--- a/server/thread.c
++++ b/server/thread.c
+@@ -856,15 +856,7 @@ affinity_t get_thread_affinity( struct thread *thread )
+ 
+ int get_effective_thread_priority( struct thread *thread )
+ {
+-    int priority = thread->priority;
+-
+-    if (thread->disable_boost || priority >= LOW_REALTIME_PRIORITY)
+-        return priority;
+-
+-    if (get_process_first_thread( thread->process ) == thread)
+-        priority++;
+-
+-    return min( priority, LOW_REALTIME_PRIORITY - 1 );
++    return thread->priority;
+ }
+ 
+ unsigned int set_thread_priority( struct thread *thread, int priority )
+@@ -874,6 +866,9 @@ unsigned int set_thread_priority( struct thread *thread, int priority )
+     if (priority < LOW_PRIORITY + 1 || priority > HIGH_PRIORITY) return STATUS_INVALID_PARAMETER;
+     if (priority_class != PROCESS_PRIOCLASS_REALTIME && priority >= LOW_REALTIME_PRIORITY) return STATUS_PRIVILEGE_NOT_HELD;
+ 
++    /* Wine 7 avoided a setpriority() syscall when nothing changed. */
++    if (thread->priority == priority) return STATUS_SUCCESS;
++
+     thread->priority = priority;
+ 
+     /* if thread is gone or hasn't started yet, this will be called again from init_thread with a unix_tid */

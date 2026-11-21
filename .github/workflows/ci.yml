@@ -270,6 +270,30 @@ jobs:
           grep -A8 'static void tp_object_wait' \
             wine/dlls/ntdll/threadpool.c | grep -q 'enter_critical_section( &pool->cs )'
 
+      - name: Verify -O3 server_select context guard
+        run: |
+          # GCC 14 at -O3 otherwise fails dlls/ntdll/unix/server.c with
+          # -Werror=nonnull on the optional memcpy() destination.
+          grep -q 'if (context && reply_size > sizeof(reply_data.call))' \
+            wine/dlls/ntdll/unix/server.c
+
+      - name: Verify Wine 7 message pump and scheduler behavior
+        run: |
+          # P5R's title screen is a tight PeekMessage loop. The Wine 11 8 kHz
+          # driver-event throttle and per-empty-peek yield are a large CPU cost.
+          grep -q 'Wine 7 16ms user_shared_data tick' \
+            wine/dlls/win32u/message.c
+          ! grep -q 'counter.QuadPart \* 8000 / freq.QuadPart' \
+            wine/dlls/win32u/message.c
+          grep -q 'Wine 7 only flushed and yielded once per driver check tick' \
+            wine/dlls/win32u/message.c
+          grep -q 'last_empty_peek_time' \
+            wine/dlls/win32u/ntuser_private.h
+          grep -A5 'int get_effective_thread_priority' \
+            wine/server/thread.c | grep -q 'return thread->priority;'
+          grep -q 'Wine 7 avoided a setpriority() syscall' \
+            wine/server/thread.c
+
       - name: Verify Wine 7 never uses CLOCK_MONOTONIC_RAW
         run: |
           # Proton 7 never queried the non-monotonic CLOCK_MONOTONIC_RAW for the

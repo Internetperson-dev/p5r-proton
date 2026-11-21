@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] ntdll: Guard the optional context copy in server_select()
+
+GCC 14 with -O3 cannot prove that context is non-null whenever the server
+returns context data, and turns the memcpy() into a -Werror=nonnull failure.
+The extra check is also correct for callers that pass no context.
+
+diff --git a/dlls/ntdll/unix/server.c b/dlls/ntdll/unix/server.c
+index 18b4c2e1122..71130497b62 100644
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -790,7 +790,7 @@ unsigned int server_select( const union select_op *select_op, data_size_t size,
+     while (ret == STATUS_USER_APC || ret == STATUS_KERNEL_APC);
+ 
+     if (ret == STATUS_USER_APC) *user_apc = reply_data.call.user;
+-    if (reply_size > sizeof(reply_data.call))
++    if (context && reply_size > sizeof(reply_data.call))
+     {
+         memcpy( context, reply_data.context, reply_size - sizeof(reply_data.call) );
+         context[0].flags &= ~SERVER_CTX_EXEC_SPACE;

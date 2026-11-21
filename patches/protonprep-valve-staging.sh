@@ -615,6 +615,19 @@ apply_all_in_dir() {
     echo "WINE: -PERF- restore Wine 7 inline critical section fast paths (Persona 5 Royal)"
     apply_patch "../patches/proton/0010-ntdll-Restore-Wine-7-inline-critical-section-fast-paths.patch"
 
+    # GCC 14 at -O3 cannot prove that the optional context pointer is non-null
+    # on this path and turns the memcpy into a -Werror=nonnull build failure.
+    echo "WINE: guard optional context copy in server_select (-O3 build fix)"
+    apply_patch "../patches/proton/0011-ntdll-Guard-optional-context-copy-in-server_select.patch"
+
+    # Wine 11 throttles driver event checks at 8 kHz and flushes/yields on every
+    # empty PeekMessage. Wine 7 used the 16 ms user_shared_data tick and only
+    # flushed/yielded once per tick. It also avoided repeated setpriority()
+    # calls and the recent main-thread priority boost. P5R's title screen is a
+    # tight message pump, so restore the Wine 7 shape on all of those paths.
+    echo "WINE: -PERF- restore Wine 7 message pump and scheduler behavior (Persona 5 Royal)"
+    apply_patch "../patches/proton/0012-win32u-server-Restore-Wine-7-message-pump-and-scheduler-behavior.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 
