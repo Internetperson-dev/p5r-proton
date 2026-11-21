@@ -2416,6 +2416,14 @@ class Session:
             self.env["PROTON_NO_NTSYNC"] = "1"
             self.env["WINENTSYNC"] = ""
 
+        # P5R build: DXVK 3.x's refresh-rate heuristic engages its own frame
+        # limiter because the game selects a 60 Hz display mode. That adds a
+        # dxvk-frame thread with a 1 ms timer, caps the title screen near 60 FPS,
+        # and accounts for most of the extra CPU use versus GE-Proton7's DXVK
+        # 1.10.3, which has no such heuristic. Disable the limiter by default.
+        if "maxFrameRate" not in self.env.get("DXVK_CONFIG", ""):
+            append_to_env_str(self.env, "DXVK_CONFIG", "dxgi.maxFrameRate = -1", ";")
+
         if "noesync" in self.compat_config:
             self.env.pop("WINEESYNC", "")
             self.env["WINEESYNC"] = "0"

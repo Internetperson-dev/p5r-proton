@@ -247,6 +247,15 @@ jobs:
           grep -q 'self.env\["PROTON_NO_NTSYNC"\] = ""' \
             proton
 
+      - name: Verify DXVK frame limiter disabled
+        run: |
+          # GE-Proton7's DXVK 1.10.3 had no refresh-rate limiter heuristic.
+          # DXVK 3.x engages a 1 ms-timer limiter in P5R, capping the title
+          # screen near 60 FPS and adding CPU wakeups. Keep it disabled.
+          grep -q 'dxgi.maxFrameRate = -1' proton
+          grep -q 'if "maxFrameRate" not in self.env.get("DXVK_CONFIG", ""):' \
+            proton
+
       - name: Verify Wine 7 heap in-place resize
         run: |
           # The HeapReAlloc backport is part of the remaining Persona 5 Royal
