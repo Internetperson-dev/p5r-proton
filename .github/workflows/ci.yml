@@ -51,6 +51,10 @@ jobs:
       CXXFLAGS: -O3 -march=nocona -mtune=core-avx2
       RUSTFLAGS: -Copt-level=3 -Ctarget-cpu=nocona
       LDFLAGS: -Wl,-O1,--sort-common,--as-needed
+      # Makefile.in's -Wno-error=* flags only downgrade GCC diagnostics; they
+      # do not change generated code. Tell ccache to leave them out of the
+      # input hash so warning-suppression fixes do not invalidate every object.
+      CCACHE_IGNOREOPTIONS: -Wno-error=maybe-uninitialized -Wno-error=format-overflow
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -126,6 +130,7 @@ jobs:
             ccache -z
             echo "ccache configuration:"
             ccache -p | head -20
+            ccache -p | grep -E 'ignore_options|max_size|direct_mode' || true
           else
             echo "ccache not available; the build will proceed without it"
           fi
