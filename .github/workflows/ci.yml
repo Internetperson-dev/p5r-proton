@@ -213,17 +213,12 @@ jobs:
           ! grep -q 'performance_cores\|/sys/devices/cpu_core/cpus' \
             wine/dlls/ntdll/unix/system.c
 
-      - name: Verify Wine 7 sync semantics
+      - name: Verify sync path for A/B build
         run: |
-          # The yield/delay/signal-and-wait restore is what closes the remaining
-          # Persona 5 Royal CPU regression; never let it regress silently.
-          grep -q 'Wine 7 semantics: a yield is always reported' \
-            wine/dlls/ntdll/unix/sync.c
-          grep -q 'Wine 7 used usleep(0) here' \
-            wine/dlls/ntdll/unix/sync.c
-          ! grep -q 'RUSAGE_THREAD' \
-            wine/dlls/ntdll/unix/sync.c
-          grep -q 'Wine 7 always performed the signal and wait atomically' \
+          # A/B build: patch 0005 is intentionally disabled so Wine 11 keeps
+          # its in-process signal-and-wait fast path. Verify that is what shipped.
+          grep -q 'inproc_signal_and_wait' wine/dlls/ntdll/unix/sync.c
+          ! grep -q 'Wine 7 always performed the signal and wait atomically' \
             wine/dlls/ntdll/unix/sync.c
 
       - name: Verify Wine 7 IPv6 forwarding fast path
