@@ -580,11 +580,14 @@ apply_all_in_dir() {
     echo "WINE: -PERF- restore Wine 7 CPU topology override handling (Persona 5 Royal)"
     apply_patch "../patches/proton/0004-ntdll-Restore-Wine-7-CPU-topology-override-handling.patch"
 
-    # Persona 5 Royal: the Wine 8+ synchronization paths are measurably slower for
-    # the APIs the game drives from its frame loop. Restore the Wine 7 semantics
-    # for yields, delays and atomic signal-and-wait.
-    echo "WINE: -PERF- restore Wine 7 yield/delay/signal-and-wait semantics (Persona 5 Royal)"
-    apply_patch "../patches/proton/0005-ntdll-Restore-Wine-7-yield-delay-and-signal-semantics.patch"
+    # DISABLED FOR A/B: restoring the Wine 7 signal-and-wait path forces every
+    # NtSignalAndWaitForSingleObject() through wineserver and removes Wine 11's
+    # in-process/fsync fast path. Controlled same-scene captures with a single
+    # DXVK version showed wineserver at 10% vs 2.5% CPU and the game's worker
+    # threads at 214% vs 127%, so this patch is the prime suspect. Keep the file
+    # for reference; do not apply it until the A/B confirms or clears it.
+    # echo "WINE: -PERF- restore Wine 7 yield/delay/signal-and-wait semantics (Persona 5 Royal)"
+    # apply_patch "../patches/proton/0005-ntdll-Restore-Wine-7-yield-delay-and-signal-semantics.patch"
 
     # Persona 5 Royal: Wine 10+ LFH refuses in-place heap resizes and falls back
     # to allocate + memcpy + free; Wine 7 resized in place. Restore the Wine 7
