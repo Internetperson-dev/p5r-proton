@@ -285,6 +285,19 @@ jobs:
           grep -A8 'static void tp_object_wait' \
             wine/dlls/ntdll/threadpool.c | grep -q 'enter_critical_section( &pool->cs )'
 
+      - name: Verify Wine 7 critical section debug info default
+        run: |
+          # Wine 7 woke one critical-section waiter via RtlWakeAddressSingle().
+          # Wine 11's no-debug-info default routes through NtReleaseSemaphore(),
+          # whose fsync backend wakes all waiters and causes P5R's four update
+          # threads to burn CPU in lockstep.
+          grep -q 'Wine 7 allocated debug info for every critical section' \
+            wine/dlls/ntdll/sync.c
+          grep -q 'if (flags & RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO)' \
+            wine/dlls/ntdll/sync.c
+          ! grep -q 'if (!(flags & RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO))' \
+            wine/dlls/ntdll/sync.c
+
       - name: Verify -O3 server_select context guard
         run: |
           # GCC 14 at -O3 otherwise fails dlls/ntdll/unix/server.c with

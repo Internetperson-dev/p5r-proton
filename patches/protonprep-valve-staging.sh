@@ -634,6 +634,13 @@ apply_all_in_dir() {
     echo "WINE: handle null vectors in bcrypt is_equal_vector (-O3 build fix)"
     apply_patch "../patches/proton/0013-bcrypt-Handle-null-vector-in-is_equal_vector.patch"
 
+    # Wine 7 allocated critical section debug info by default, which keeps the
+    # single-waiter RtlWakeAddressSingle() wake path. Wine 11 defaults normal
+    # sections to a real semaphore whose fsync release wakes every waiter;
+    # that turns P5R's four update threads into a thundering herd.
+    echo "WINE: -PERF- restore Wine 7 critical section debug info default (Persona 5 Royal)"
+    apply_patch "../patches/proton/0014-ntdll-Restore-Wine-7-critical-section-debug-info-default.patch"
+
     echo "WINE: implement IOCTL_SERIAL_GET_DTRRTS (Qt serial device tools, e.g. MOZA Cockpit)"
     apply_patch "../patches/proton/0001-ntdll-Implement-IOCTL_SERIAL_GET_DTRRTS-for-serial-dev.patch"
 

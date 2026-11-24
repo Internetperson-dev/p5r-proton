@@ -1,0 +1,38 @@
+From: p5r-proton
+Subject: ntdll: restore Wine 7 critical section debug info default
+
+Wine 7 allocated RTL_CRITICAL_SECTION_DEBUG for every critical section unless
+the caller explicitly passed RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO. Wine 8.11
+commit 8b3944e1341 ("ntdll: Only allocate debug info in critical sections with
+RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO") inverted that default.
+
+The change is not just bookkeeping. With debug info, Wine waits on the
+LockSemaphore word with RtlWaitOnAddress() and wakes one waiter with
+RtlWakeAddressSingle(). Without debug info, the CS uses a lazily created real
+semaphore; NtReleaseSemaphore() reaches fsync_release_semaphore(), which does
+futex_wake(..., INT_MAX) and wakes every waiter. P5R's four update threads all
+contend on the same short-lived sections, so modern Wine wakes all four on
+every release while Wine 7 woke exactly one. The three losers immediately fail
+the LockSemaphore CAS and go back to the futex, which matches the observed
+~0.9 CPU correlation and ~27% system time across those four threads.
+
+Restore the Wine 7 default so normal critical sections keep the single-waiter
+futex path.
+--- a/dlls/ntdll/sync.c
++++ b/dlls/ntdll/sync.c
+@@ -227,7 +227,14 @@
+      * is done, then debug info should be managed through Rtlp[Allocate|Free]DebugInfo
+      * so (e.g.) MakeCriticalSectionGlobal() doesn't free it using HeapFree().
+      */
+-    if (!(flags & RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO))
++    /* Wine 7 allocated debug info for every critical section unless the caller
++     * explicitly passed RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO. That selects
++     * the single-waiter RtlWakeAddressSingle() path in
++     * RtlpUnWaitCriticalSection(). Wine 11 instead defaults normal sections to
++     * no debug info, so they wait on a real semaphore and NtReleaseSemaphore()
++     * wakes every fsync waiter, which turns P5R's four update threads into a
++     * thundering herd. Restore the Wine 7 default. */
++    if (flags & RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO)
+         crit->DebugInfo = no_debug_info_marker;
+     else
+     {
