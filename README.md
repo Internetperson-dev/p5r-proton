@@ -12,6 +12,9 @@ I think the best way to solve it would be to have a Reloaded-II modification tha
 
 Even on Windows it seems the way Persona 5 Royal's PC port uses CPU is inefficient. 
 
-To do. Maybe see if running the game in [Raven](https://github.com/mirkobrombin/raven) improves things? Either by running Steam and P5R in Raven, or building a bridge between Linux Steam and and Raven in comptablity tools. 
+[The AI performance monitoring source code is here](https://github.com/Internetperson-dev/p5r-proton/tree/p5r-perfprobe-source)
 
-The AI prob mod source code is at - 
+## To do
+
+Maybe see if running the game in [Raven](https://github.com/mirkobrombin/raven) improves things? Either by running Steam and P5R in Raven, or building a bridge between Linux Steam and and Raven in comptablity tools. 
+
