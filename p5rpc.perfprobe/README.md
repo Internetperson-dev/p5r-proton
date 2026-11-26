@@ -60,5 +60,7 @@ or IAT scan run. Version 0.4.4 removes even the return-address write from those 
 preserves the `Present` arguments around `rdtsc` (the TSC stub must not clobber `rdx`/`SyncInterval`). Version 0.4.6
 minimises the hot path further: non-Present counters use one `lock inc`, draw primitives use RIP-relative `lock add`,
 the Present stub restores `rdx` without stack pushes, and the frame-time ring is 256 entries instead of 16384 around
-a much smaller native allocation. Inspired by Ultra and Special K, interpretation is offline: the game threads only
-bump counters and stamp Present; sorting, percentiles and formatting happen on the background timer thread.
+a much smaller native allocation. Version 0.4.7 routes `D3D11CreateDevice*` and `CreateDXGIFactory*` hooks through
+`[UnmanagedCallersOnly]` entries instead of managed lambdas, so the native originals are called with a correctly aligned
+Windows x64 stack. Inspired by Ultra and Special K, interpretation is offline: the game threads only bump counters and
+stamp Present; sorting, percentiles and formatting happen on the background timer thread.

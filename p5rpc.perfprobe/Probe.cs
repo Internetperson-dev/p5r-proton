@@ -242,6 +242,15 @@ public static unsafe class Probe
 
     private static Action<string>? _log;
     private static IReloadedHooks? _hooks;
+
+    // Originals are called from [UnmanagedCallersOnly] hook entries. Going through a managed lambda makes
+    // Reloaded.Hooks enter C# with an unaligned stack on Wine 11, which faults in DXVK builds that use movaps.
+    private static CreateDxgiFactoryFn? _originalCreateDxgiFactory;
+    private static CreateDxgiFactory2Fn? _originalCreateDxgiFactory2;
+    private static D3D11CreateDeviceFn? _originalD3D11CreateDevice;
+    private static D3D11CreateDeviceFn? _originalD3D11CoreCreateDevice;
+    private static D3D11CreateDeviceSwapChainFn? _originalD3D11CreateDeviceAndSwapChain;
+
     private static bool _installed, _detailed, _measureTime, _profileWindows, _profileAllModules, _efficient;
     private static double _cyclesPerSecond = 1;
     private static ModuleInfo[] _modules = [];
@@ -544,31 +553,19 @@ public static unsafe class Probe
         {
             if (flags)
             {
-                Reloaded.Hooks.Definitions.IHook<CreateDxgiFactory2Fn>? hook = null;
-                CreateDxgiFactory2Fn impl = (f, riid, ppFactory) =>
-                {
-                    var hr = hook!.OriginalFunction(f, riid, ppFactory);
-                    if (hr >= 0 && ppFactory != 0) InstallFactoryHooks(*(nint*)ppFactory);
-                    return hr;
-                };
-                hook = _hooks.CreateHook(impl, (long)address);
-                KeepAlive.Add(impl);
+                var hook = _hooks.CreateHook<CreateDxgiFactory2Fn>(typeof(Probe), nameof(DxgiFactory2Hook), (long)address);
                 if (hook == null) return;
+                _originalCreateDxgiFactory2 = Marshal.GetDelegateForFunctionPointer<CreateDxgiFactory2Fn>(
+                    (nint)hook.OriginalFunctionAddress);
                 KeepAlive.Add(hook);
                 hook.Activate();
             }
             else
             {
-                Reloaded.Hooks.Definitions.IHook<CreateDxgiFactoryFn>? hook = null;
-                CreateDxgiFactoryFn impl = (riid, ppFactory) =>
-                {
-                    var hr = hook!.OriginalFunction(riid, ppFactory);
-                    if (hr >= 0 && ppFactory != 0) InstallFactoryHooks(*(nint*)ppFactory);
-                    return hr;
-                };
-                hook = _hooks.CreateHook(impl, (long)address);
-                KeepAlive.Add(impl);
+                var hook = _hooks.CreateHook<CreateDxgiFactoryFn>(typeof(Probe), nameof(DxgiFactoryHook), (long)address);
                 if (hook == null) return;
+                _originalCreateDxgiFactory = Marshal.GetDelegateForFunctionPointer<CreateDxgiFactoryFn>(
+                    (nint)hook.OriginalFunctionAddress);
                 KeepAlive.Add(hook);
                 hook.Activate();
             }
@@ -578,6 +575,22 @@ public static unsafe class Probe
         {
             Log($"Could not hook {name} at 0x{address:X}: {exception.Message}");
         }
+    }
+
+    [UnmanagedCallersOnly]
+    private static int DxgiFactoryHook(nint riid, nint ppFactory)
+    {
+        var hr = _originalCreateDxgiFactory!(riid, ppFactory);
+        if (hr >= 0 && ppFactory != 0) InstallFactoryHooks(*(nint*)ppFactory);
+        return hr;
+    }
+
+    [UnmanagedCallersOnly]
+    private static int DxgiFactory2Hook(uint flags, nint riid, nint ppFactory)
+    {
+        var hr = _originalCreateDxgiFactory2!(flags, riid, ppFactory);
+        if (hr >= 0 && ppFactory != 0) InstallFactoryHooks(*(nint*)ppFactory);
+        return hr;
     }
 
     private static void InstallFactoryHooks(nint factory)
@@ -628,31 +641,31 @@ public static unsafe class Probe
         {
             if (swapChain)
             {
-                Reloaded.Hooks.Definitions.IHook<D3D11CreateDeviceSwapChainFn>? hook = null;
-                D3D11CreateDeviceSwapChainFn impl = (a, b, c, d, e, f, g, h, i, j, k, l) =>
-                {
-                    var hr = hook!.OriginalFunction(a, b, c, d, e, f, g, h, i, j, k, l);
-                    if (hr >= 0) Capture(j, l, i); // ppDevice, ppImmediateContext, ppSwapChain
-                    return hr;
-                };
-                hook = _hooks.CreateHook(impl, (long)address);
-                KeepAlive.Add(impl);
+                var hook = _hooks.CreateHook<D3D11CreateDeviceSwapChainFn>(typeof(Probe),
+                    nameof(D3D11CreateDeviceAndSwapChainHook), (long)address);
                 if (hook == null) { Log($"Could not hook {name} at 0x{address:X}."); return; }
+                _originalD3D11CreateDeviceAndSwapChain = Marshal.GetDelegateForFunctionPointer<D3D11CreateDeviceSwapChainFn>(
+                    (nint)hook.OriginalFunctionAddress);
+                KeepAlive.Add(hook);
+                hook.Activate();
+            }
+            else if (name.Equals("D3D11CoreCreateDevice", StringComparison.OrdinalIgnoreCase))
+            {
+                var hook = _hooks.CreateHook<D3D11CreateDeviceFn>(typeof(Probe),
+                    nameof(D3D11CoreCreateDeviceHook), (long)address);
+                if (hook == null) { Log($"Could not hook {name} at 0x{address:X}."); return; }
+                _originalD3D11CoreCreateDevice = Marshal.GetDelegateForFunctionPointer<D3D11CreateDeviceFn>(
+                    (nint)hook.OriginalFunctionAddress);
                 KeepAlive.Add(hook);
                 hook.Activate();
             }
             else
             {
-                Reloaded.Hooks.Definitions.IHook<D3D11CreateDeviceFn>? hook = null;
-                D3D11CreateDeviceFn impl = (a, b, c, d, e, f, g, h, i, j) =>
-                {
-                    var hr = hook!.OriginalFunction(a, b, c, d, e, f, g, h, i, j);
-                    if (hr >= 0) Capture(h, j, 0); // ppDevice, ppImmediateContext
-                    return hr;
-                };
-                hook = _hooks.CreateHook(impl, (long)address);
-                KeepAlive.Add(impl);
+                var hook = _hooks.CreateHook<D3D11CreateDeviceFn>(typeof(Probe),
+                    nameof(D3D11CreateDeviceHook), (long)address);
                 if (hook == null) { Log($"Could not hook {name} at 0x{address:X}."); return; }
+                _originalD3D11CreateDevice = Marshal.GetDelegateForFunctionPointer<D3D11CreateDeviceFn>(
+                    (nint)hook.OriginalFunctionAddress);
                 KeepAlive.Add(hook);
                 hook.Activate();
             }
@@ -663,6 +676,39 @@ public static unsafe class Probe
         {
             Log($"Could not hook {name} at 0x{address:X}: {exception.Message}");
         }
+    }
+
+    [UnmanagedCallersOnly]
+    private static int D3D11CreateDeviceHook(nint adapter, int driverType, nint software, uint flags,
+        nint featureLevels, uint featureLevelCount, uint sdkVersion, nint ppDevice, nint pFeatureLevel,
+        nint ppImmediateContext)
+    {
+        var hr = _originalD3D11CreateDevice!(adapter, driverType, software, flags, featureLevels,
+            featureLevelCount, sdkVersion, ppDevice, pFeatureLevel, ppImmediateContext);
+        if (hr >= 0) Capture(ppDevice, ppImmediateContext, 0);
+        return hr;
+    }
+
+    [UnmanagedCallersOnly]
+    private static int D3D11CoreCreateDeviceHook(nint adapter, int driverType, nint software, uint flags,
+        nint featureLevels, uint featureLevelCount, uint sdkVersion, nint ppDevice, nint pFeatureLevel,
+        nint ppImmediateContext)
+    {
+        var hr = _originalD3D11CoreCreateDevice!(adapter, driverType, software, flags, featureLevels,
+            featureLevelCount, sdkVersion, ppDevice, pFeatureLevel, ppImmediateContext);
+        if (hr >= 0) Capture(ppDevice, ppImmediateContext, 0);
+        return hr;
+    }
+
+    [UnmanagedCallersOnly]
+    private static int D3D11CreateDeviceAndSwapChainHook(nint adapter, int driverType, nint software, uint flags,
+        nint featureLevels, uint featureLevelCount, uint sdkVersion, nint swapChainDesc, nint ppSwapChain,
+        nint ppDevice, nint pFeatureLevel, nint ppImmediateContext)
+    {
+        var hr = _originalD3D11CreateDeviceAndSwapChain!(adapter, driverType, software, flags, featureLevels,
+            featureLevelCount, sdkVersion, swapChainDesc, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
+        if (hr >= 0) Capture(ppDevice, ppImmediateContext, ppSwapChain);
+        return hr;
     }
 
     private static void Capture(nint ppDevice, nint ppContext, nint ppSwapChain)
