@@ -243,13 +243,19 @@ public static unsafe class Probe
     private static Action<string>? _log;
     private static IReloadedHooks? _hooks;
 
-    // Originals are called from [UnmanagedCallersOnly] hook entries. Going through a managed lambda makes
-    // Reloaded.Hooks enter C# with an unaligned stack on Wine 11, which faults in DXVK builds that use movaps.
+    // Every hook that calls a native original uses a static [UnmanagedCallersOnly] entry. A managed lambda here
+    // makes Reloaded.Hooks enter C# with an unaligned stack on Wine 11, which faults in DXVK builds that use movaps.
+    // Each distinct original gets its own field so two exports cannot accidentally share the last-hooked function.
     private static CreateDxgiFactoryFn? _originalCreateDxgiFactory;
+    private static CreateDxgiFactoryFn? _originalCreateDxgiFactory1;
     private static CreateDxgiFactory2Fn? _originalCreateDxgiFactory2;
     private static D3D11CreateDeviceFn? _originalD3D11CreateDevice;
     private static D3D11CreateDeviceFn? _originalD3D11CoreCreateDevice;
     private static D3D11CreateDeviceSwapChainFn? _originalD3D11CreateDeviceAndSwapChain;
+    private static CreateSwapChainFn? _originalCreateSwapChain;
+    private static nint _createSwapChainFunction;
+    private static CreateDeferredContextFn? _originalCreateDeferredContext;
+    private static nint _createDeferredContextFunction;
 
     private static bool _installed, _detailed, _measureTime, _profileWindows, _profileAllModules, _efficient;
     private static double _cyclesPerSecond = 1;
@@ -539,23 +545,32 @@ public static unsafe class Probe
         var dxgi = LoadLibraryW("dxgi.dll");
         if (dxgi == 0) { Log("dxgi.dll could not be loaded; swapchain Present will not be counted."); return; }
 
-        HookFactory(dxgi, "CreateDXGIFactory", flags: false);
-        HookFactory(dxgi, "CreateDXGIFactory1", flags: false);
-        HookFactory(dxgi, "CreateDXGIFactory2", flags: true);
+        HookFactory(dxgi, "CreateDXGIFactory");
+        HookFactory(dxgi, "CreateDXGIFactory1");
+        HookFactory(dxgi, "CreateDXGIFactory2");
     }
 
-    private static void HookFactory(nint dxgi, string name, bool flags)
+    private static void HookFactory(nint dxgi, string name)
     {
         var address = GetProcAddress(dxgi, name);
         if (address == 0 || !HookedFunctions.Add(address) || _hooks == null) return;
 
         try
         {
-            if (flags)
+            if (name.Equals("CreateDXGIFactory2", StringComparison.OrdinalIgnoreCase))
             {
                 var hook = _hooks.CreateHook<CreateDxgiFactory2Fn>(typeof(Probe), nameof(DxgiFactory2Hook), (long)address);
                 if (hook == null) return;
                 _originalCreateDxgiFactory2 = Marshal.GetDelegateForFunctionPointer<CreateDxgiFactory2Fn>(
+                    (nint)hook.OriginalFunctionAddress);
+                KeepAlive.Add(hook);
+                hook.Activate();
+            }
+            else if (name.Equals("CreateDXGIFactory1", StringComparison.OrdinalIgnoreCase))
+            {
+                var hook = _hooks.CreateHook<CreateDxgiFactoryFn>(typeof(Probe), nameof(DxgiFactory1Hook), (long)address);
+                if (hook == null) return;
+                _originalCreateDxgiFactory1 = Marshal.GetDelegateForFunctionPointer<CreateDxgiFactoryFn>(
                     (nint)hook.OriginalFunctionAddress);
                 KeepAlive.Add(hook);
                 hook.Activate();
@@ -581,7 +596,21 @@ public static unsafe class Probe
     private static int DxgiFactoryHook(nint riid, nint ppFactory)
     {
         var hr = _originalCreateDxgiFactory!(riid, ppFactory);
-        if (hr >= 0 && ppFactory != 0) InstallFactoryHooks(*(nint*)ppFactory);
+        if (hr >= 0 && ppFactory != 0)
+        {
+            try { InstallFactoryHooks(*(nint*)ppFactory); } catch { }
+        }
+        return hr;
+    }
+
+    [UnmanagedCallersOnly]
+    private static int DxgiFactory1Hook(nint riid, nint ppFactory)
+    {
+        var hr = _originalCreateDxgiFactory1!(riid, ppFactory);
+        if (hr >= 0 && ppFactory != 0)
+        {
+            try { InstallFactoryHooks(*(nint*)ppFactory); } catch { }
+        }
         return hr;
     }
 
@@ -589,7 +618,10 @@ public static unsafe class Probe
     private static int DxgiFactory2Hook(uint flags, nint riid, nint ppFactory)
     {
         var hr = _originalCreateDxgiFactory2!(flags, riid, ppFactory);
-        if (hr >= 0 && ppFactory != 0) InstallFactoryHooks(*(nint*)ppFactory);
+        if (hr >= 0 && ppFactory != 0)
+        {
+            try { InstallFactoryHooks(*(nint*)ppFactory); } catch { }
+        }
         return hr;
     }
 
@@ -608,20 +640,16 @@ public static unsafe class Probe
 
         try
         {
-            Reloaded.Hooks.Definitions.IHook<CreateSwapChainFn>? hook = null;
-            CreateSwapChainFn impl = (f, device, desc, ppSwapChain) =>
+            if (_originalCreateSwapChain != null && _createSwapChainFunction != function)
             {
-                var hr = hook!.OriginalFunction(f, device, desc, ppSwapChain);
-                if (hr >= 0 && ppSwapChain != 0)
-                {
-                    var swapChain = *(nint*)ppSwapChain;
-                    if (swapChain != 0) InstrumentVtable("swap", swapChain, _efficient ? EfficientSwapSlots : SwapSlots);
-                }
-                return hr;
-            };
-            hook = _hooks.CreateHook(impl, (long)function);
-            KeepAlive.Add(impl);
+                Log($"Skipping second IDXGIFactory::CreateSwapChain at 0x{function:X}; already hooked 0x{_createSwapChainFunction:X}.");
+                return;
+            }
+            var hook = _hooks.CreateHook<CreateSwapChainFn>(typeof(Probe), nameof(CreateSwapChainHook), (long)function);
             if (hook == null) return;
+            _originalCreateSwapChain = Marshal.GetDelegateForFunctionPointer<CreateSwapChainFn>(
+                (nint)hook.OriginalFunctionAddress);
+            _createSwapChainFunction = function;
             KeepAlive.Add(hook);
             hook.Activate();
             Log($"Hooked IDXGIFactory::CreateSwapChain at 0x{function:X} ({ModuleName(function)}).");
@@ -630,6 +658,22 @@ public static unsafe class Probe
         {
             Log($"Could not hook IDXGIFactory::CreateSwapChain at 0x{function:X}: {exception.Message}");
         }
+    }
+
+    [UnmanagedCallersOnly]
+    private static int CreateSwapChainHook(nint factory, nint device, nint desc, nint ppSwapChain)
+    {
+        var hr = _originalCreateSwapChain!(factory, device, desc, ppSwapChain);
+        if (hr >= 0 && ppSwapChain != 0)
+        {
+            try
+            {
+                var swapChain = *(nint*)ppSwapChain;
+                if (swapChain != 0) InstrumentVtable("swap", swapChain, _efficient ? EfficientSwapSlots : SwapSlots);
+            }
+            catch { }
+        }
+        return hr;
     }
 
     private static void HookCreation(nint module, string name, bool swapChain)
@@ -685,7 +729,10 @@ public static unsafe class Probe
     {
         var hr = _originalD3D11CreateDevice!(adapter, driverType, software, flags, featureLevels,
             featureLevelCount, sdkVersion, ppDevice, pFeatureLevel, ppImmediateContext);
-        if (hr >= 0) Capture(ppDevice, ppImmediateContext, 0);
+        if (hr >= 0)
+        {
+            try { Capture(ppDevice, ppImmediateContext, 0); } catch { }
+        }
         return hr;
     }
 
@@ -696,7 +743,10 @@ public static unsafe class Probe
     {
         var hr = _originalD3D11CoreCreateDevice!(adapter, driverType, software, flags, featureLevels,
             featureLevelCount, sdkVersion, ppDevice, pFeatureLevel, ppImmediateContext);
-        if (hr >= 0) Capture(ppDevice, ppImmediateContext, 0);
+        if (hr >= 0)
+        {
+            try { Capture(ppDevice, ppImmediateContext, 0); } catch { }
+        }
         return hr;
     }
 
@@ -707,7 +757,10 @@ public static unsafe class Probe
     {
         var hr = _originalD3D11CreateDeviceAndSwapChain!(adapter, driverType, software, flags, featureLevels,
             featureLevelCount, sdkVersion, swapChainDesc, ppSwapChain, ppDevice, pFeatureLevel, ppImmediateContext);
-        if (hr >= 0) Capture(ppDevice, ppImmediateContext, ppSwapChain);
+        if (hr >= 0)
+        {
+            try { Capture(ppDevice, ppImmediateContext, ppSwapChain); } catch { }
+        }
         return hr;
     }
 
@@ -749,25 +802,24 @@ public static unsafe class Probe
         {
             try
             {
-                Reloaded.Hooks.Definitions.IHook<CreateDeferredContextFn>? hook = null;
-                CreateDeferredContextFn impl = (dev, flags, pp) =>
+                if (_originalCreateDeferredContext != null && _createDeferredContextFunction != function)
                 {
-                    var hr = hook!.OriginalFunction(dev, flags, pp);
-                    if (hr >= 0 && pp != 0)
-                    {
-                        var context = *(nint*)pp;
-                        if (context != 0) InstallContextHooks(context);
-                    }
-                    return hr;
-                };
-                hook = _hooks.CreateHook(impl, (long)function);
-                KeepAlive.Add(impl);
-                if (hook == null) Log($"Could not hook CreateDeferredContext at 0x{function:X}.");
+                    Log($"Skipping second CreateDeferredContext at 0x{function:X}; already hooked 0x{_createDeferredContextFunction:X}.");
+                }
                 else
                 {
-                    KeepAlive.Add(hook);
-                    hook.Activate();
-                    Log($"Hooked CreateDeferredContext at 0x{function:X} ({ModuleName(function)}).");
+                    var hook = _hooks.CreateHook<CreateDeferredContextFn>(typeof(Probe),
+                        nameof(CreateDeferredContextHook), (long)function);
+                    if (hook == null) Log($"Could not hook CreateDeferredContext at 0x{function:X}.");
+                    else
+                    {
+                        _originalCreateDeferredContext = Marshal.GetDelegateForFunctionPointer<CreateDeferredContextFn>(
+                            (nint)hook.OriginalFunctionAddress);
+                        _createDeferredContextFunction = function;
+                        KeepAlive.Add(hook);
+                        hook.Activate();
+                        Log($"Hooked CreateDeferredContext at 0x{function:X} ({ModuleName(function)}).");
+                    }
                 }
             }
             catch (Exception exception)
@@ -778,6 +830,22 @@ public static unsafe class Probe
 
         // Do this last: it replaces vtable slot 27 with the counter stub, so the original function address must be read first.
         InstrumentVtable("dev", device, _efficient ? EfficientDeviceSlots : DeviceSlots);
+    }
+
+    [UnmanagedCallersOnly]
+    private static int CreateDeferredContextHook(nint device, uint flags, nint ppContext)
+    {
+        var hr = _originalCreateDeferredContext!(device, flags, ppContext);
+        if (hr >= 0 && ppContext != 0)
+        {
+            try
+            {
+                var context = *(nint*)ppContext;
+                if (context != 0) InstallContextHooks(context);
+            }
+            catch { }
+        }
+        return hr;
     }
 
     private static void InstallContextHooks(nint context) => InstrumentVtable("ctx", context, _efficient ? EfficientContextSlots : ContextSlots);

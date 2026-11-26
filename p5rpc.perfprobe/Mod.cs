@@ -24,7 +24,7 @@ public unsafe class Mod : ModBase
         _modConfig = context.ModConfig;
         _configuration = context.Configuration;
 
-        Log("P5R Performance Probe 0.4.7 starting.");
+        Log("P5R Performance Probe 0.4.8 starting.");
         Probe.Install(context.Hooks, Log, _configuration.DetailedMode, _configuration.MeasureCallTime,
             _configuration.ProfileWindowsCalls, _configuration.ProfileAllModules, _configuration.EfficientMode);
         StartTimer();

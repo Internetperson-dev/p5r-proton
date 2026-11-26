@@ -61,6 +61,8 @@ preserves the `Present` arguments around `rdtsc` (the TSC stub must not clobber 
 minimises the hot path further: non-Present counters use one `lock inc`, draw primitives use RIP-relative `lock add`,
 the Present stub restores `rdx` without stack pushes, and the frame-time ring is 256 entries instead of 16384 around
 a much smaller native allocation. Version 0.4.7 routes `D3D11CreateDevice*` and `CreateDXGIFactory*` hooks through
-`[UnmanagedCallersOnly]` entries instead of managed lambdas, so the native originals are called with a correctly aligned
-Windows x64 stack. Inspired by Ultra and Special K, interpretation is offline: the game threads only bump counters and
-stamp Present; sorting, percentiles and formatting happen on the background timer thread.
+`[UnmanagedCallersOnly]` entries instead of managed lambdas. Version 0.4.8 completes that conversion for
+`IDXGIFactory::CreateSwapChain` and `CreateDeferredContext`, and keeps a separate original pointer for each DXGI factory
+export, so every native original is called with a correctly aligned Windows x64 stack. Inspired by Ultra and Special K,
+interpretation is offline: the game threads only bump counters and stamp Present; sorting, percentiles and formatting
+happen on the background timer thread.

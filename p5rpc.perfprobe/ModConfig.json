@@ -2,7 +2,7 @@
   "ModId": "p5rpc.perfprobe",
   "ModName": "P5R Performance Probe",
   "ModAuthor": "local diagnostic build",
-  "ModVersion": "0.4.7",
+  "ModVersion": "0.4.8",
   "ModDescription": "Diagnostic only. Efficient mode uses minimal lock-inc counters, a 256-entry frame-time ring, one TSC stamp per Present and batched background logging. Full mode adds Windows/D3D11 caller rings. Per-call CPU timing is disabled. Writes perfprobe-log.txt next to this file.",
   "ModDll": "p5rpc.perfprobe.dll",
   "ModIcon": "Preview.png",
